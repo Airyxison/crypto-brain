@@ -9,9 +9,11 @@ The feature engineer windows are tick-based, so this is semantically equivalent
 to 1-minute resolution data — labels like "1m momentum" become "60-candle momentum."
 
 Usage:
-  python backfill.py --days 90          # last 90 days
-  python backfill.py --days 365         # full year
-  python backfill.py --days 30 --dry-run  # preview without writing
+  python backfill.py --days 90                              # BTC, last 90 days
+  python backfill.py --days 365                             # BTC, full year
+  python backfill.py --product ETH-USD --symbol ETHUSDT --days 365
+  python backfill.py --product SOL-USD --symbol SOLUSDT --days 365
+  python backfill.py --days 30 --dry-run                    # preview without writing
 
 Coinbase public API: no auth required, 10 req/s limit (we use ~3 req/s).
 """
@@ -25,18 +27,17 @@ import requests
 
 
 COINBASE_API  = "https://api.exchange.coinbase.com"
-PRODUCT_ID    = "BTC-USD"
 GRANULARITY   = 60    # 1-minute candles
 MAX_PER_REQ   = 300   # Coinbase returns max 300 candles per call
 SLEEP_BETWEEN = 0.35  # seconds between requests (~3/s, well under 10/s limit)
 
 
-def fetch_candles(start: datetime, end: datetime) -> list:
+def fetch_candles(start: datetime, end: datetime, product_id: str) -> list:
     """
     Returns list of [timestamp, low, high, open, close, volume] sorted oldest-first.
     Coinbase returns newest-first so we reverse.
     """
-    url    = f"{COINBASE_API}/products/{PRODUCT_ID}/candles"
+    url    = f"{COINBASE_API}/products/{product_id}/candles"
     params = {
         'granularity': GRANULARITY,
         'start':       start.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -84,15 +85,21 @@ def get_existing_range(conn: sqlite3.Connection, symbol: str) -> tuple[int | Non
 
 def main():
     p = argparse.ArgumentParser(description='Backfill ticks.db with Coinbase historical candles')
-    p.add_argument('--db',      default='../crypto-engine/ticks.db',
+    p.add_argument('--db',       default='../crypto-engine/ticks.db',
                    help='Path to SQLite ticks database')
-    p.add_argument('--days',    type=int, default=90,
+    p.add_argument('--days',     type=int, default=90,
                    help='Days of history to fetch (default: 90)')
-    p.add_argument('--symbol',  default='BTCUSDT',
-                   help='Symbol to write into DB — must match what training uses (default: BTCUSDT)')
-    p.add_argument('--dry-run', action='store_true',
+    p.add_argument('--product',  default='BTC-USD',
+                   help='Coinbase product ID to fetch (default: BTC-USD, e.g. ETH-USD, SOL-USD)')
+    p.add_argument('--symbol',   default=None,
+                   help='Symbol to write into DB — defaults to product with hyphen removed (e.g. BTC-USD → BTCUSD)')
+    p.add_argument('--dry-run',  action='store_true',
                    help='Fetch but do not write to DB')
     args = p.parse_args()
+
+    # Derive DB symbol from product ID if not explicitly provided (BTC-USD → BTCUSD)
+    if args.symbol is None:
+        args.symbol = args.product.replace('-', '')
 
     conn = sqlite3.connect(args.db)
 
@@ -129,7 +136,7 @@ def main():
     chunk_num      = 0
     total_chunks   = int((end - start) / chunk_size) + 1
 
-    print(f"[BACKFILL] Fetching {args.days} days of BTC-USD 1m candles → symbol='{args.symbol}'")
+    print(f"[BACKFILL] Fetching {args.days} days of {args.product} 1m candles → symbol='{args.symbol}'")
     print(f"[BACKFILL] Range: {start.strftime('%Y-%m-%d')} → {end.strftime('%Y-%m-%d')} UTC")
     print(f"[BACKFILL] {total_chunks} API requests needed (~{total_chunks * SLEEP_BETWEEN:.0f}s)")
     if args.dry_run:
@@ -141,7 +148,7 @@ def main():
         chunk_num += 1
 
         try:
-            candles = fetch_candles(current, chunk_end)
+            candles = fetch_candles(current, chunk_end, args.product)
             ticks   = candles_to_ticks(candles, args.symbol)
             total_fetched += len(ticks)
 
@@ -182,7 +189,7 @@ def main():
         print(f"  Skipped:  {total_skipped:,} duplicates")
         print(f"  DB path:  {args.db}")
     print()
-    print(f"  Next: python train.py --symbol {args.symbol}")
+    print(f"  Next: python -u train.py --symbol {args.symbol} --steps 200000")
 
 
 if __name__ == '__main__':

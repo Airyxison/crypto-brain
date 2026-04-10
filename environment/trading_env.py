@@ -32,7 +32,7 @@ CANCEL_ORDER  = 4
 
 # Reward hyperparameters
 ALPHA   = 0.5    # drawdown penalty weight
-BETA    = 0.10   # stop-loss hit penalty
+BETA    = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
 GAMMA   = 0.0001 # losing hold cost per bar
 EPSILON = 0.0002 # opportunity cost: penalty for holding cash while market moves
 
@@ -177,7 +177,7 @@ class TradingEnv(gym.Env):
         realized_bonus = 0.0
         if step_realized != 0.0:
             pct = step_realized / (prev_pv + 1e-9)
-            realized_bonus = pct * 5.0 if pct > 0 else pct
+            realized_bonus = pct * 1.5 if pct > 0 else pct
 
         return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus)
 
