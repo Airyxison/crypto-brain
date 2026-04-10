@@ -49,8 +49,10 @@ class TradingEnv(gym.Env):
         self.ticks  = ticks
         self.config = config or {}
 
-        self.initial_cash  = self.config.get('initial_cash', 10_000.0)
-        self.max_hold_bars = self.config.get('max_hold_bars', 300)  # ~5 min for POC
+        self.initial_cash      = self.config.get('initial_cash', 10_000.0)
+        self.max_hold_bars     = self.config.get('max_hold_bars', 300)
+        self.max_episode_steps = self.config.get('max_episode_steps', 200)  # force many short episodes
+        self._step_count       = 0
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32
@@ -70,9 +72,10 @@ class TradingEnv(gym.Env):
         max_start = max(MIN_WINDOW, len(self.ticks) - self.max_hold_bars - 1)
         start = self.np_random.integers(MIN_WINDOW, max_start) if max_start > MIN_WINDOW else MIN_WINDOW
 
-        self._idx      = start
-        self._ob       = OrderBookSimulator(self.initial_cash)
-        self._features = FeatureEngineer()
+        self._idx        = start
+        self._step_count = 0
+        self._ob         = OrderBookSimulator(self.initial_cash)
+        self._features   = FeatureEngineer()
 
         # Pre-warm feature engineer with history before start
         for i in range(max(0, start - MIN_WINDOW), start):
@@ -96,17 +99,19 @@ class TradingEnv(gym.Env):
         # Advance tick
         event = self._ob.tick(price)
         self._features.update(price, volume, t_ms)
-        self._idx += 1
+        self._idx       += 1
+        self._step_count += 1
 
-        # Compute reward
-        reward = self._compute_reward(prev_pv, event)
+        # Compute reward — scaled up so Q-network can differentiate
+        reward = self._compute_reward(prev_pv, event) * 1000.0
 
         # Check termination
         terminated = (
             self._idx >= len(self.ticks) - 1
             or self._ob.cash <= 0
         )
-        truncated = False
+        # Truncate episode after max_episode_steps to get many short episodes
+        truncated = self._step_count >= self.max_episode_steps
 
         obs  = self._get_obs()
         info = {

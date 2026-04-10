@@ -63,9 +63,10 @@ class OrderBookSimulator:
     Call tick() on each new price to process fills and stops.
     """
 
-    # Default stop: 2% below entry. Default limit discount: 0.2% below market.
+    # Default stop: 2% below entry.
+    # Limit disc = 0 for POC: fills on next tick (market-like, eliminates credit delay)
     DEFAULT_STOP_PCT    = 0.02
-    DEFAULT_LIMIT_DISC  = 0.002
+    DEFAULT_LIMIT_DISC  = 0.0
 
     def __init__(self, initial_cash: float = 10_000.0):
         self.cash: float              = initial_cash

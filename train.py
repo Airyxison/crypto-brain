@@ -67,6 +67,8 @@ def main():
     episode_reward   = 0.0
     best_sortino     = -np.inf
     loss_log         = []
+    action_counts    = [0] * 5
+    ACTION_NAMES     = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
 
     print(f"[TRAIN] Starting training for {args.steps} steps...")
     for step in tqdm(range(1, args.steps + 1), ncols=80):
@@ -74,6 +76,7 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
+        action_counts[action] += 1
         agent.store(obs, action, reward, next_obs, done)
         losses = agent.train_step()
         if losses:
@@ -91,9 +94,12 @@ def main():
         if step % 1000 == 0:
             recent_rewards = episode_rewards[-10:] if episode_rewards else [0]
             avg_reward = np.mean(recent_rewards)
-            alpha = loss_log[-1]['alpha'] if loss_log else 0
+            alpha   = loss_log[-1]['alpha']   if loss_log else 0
             entropy = loss_log[-1]['entropy'] if loss_log else 0
-            print(f"\n[Step {step:>6}] avg_reward={avg_reward:+.4f}  α={alpha:.4f}  entropy={entropy:.4f}  buffer={len(agent.buffer)}")
+            total_a = max(sum(action_counts), 1)
+            dist = '  '.join(f"{ACTION_NAMES[i]}:{action_counts[i]/total_a*100:.0f}%" for i in range(5))
+            print(f"\n[Step {step:>6}] reward={avg_reward:+.4f}  α={alpha:.4f}  H={entropy:.4f}  episodes={len(episode_rewards)}")
+            print(f"           actions → {dist}")
 
         # Checkpoint
         if step % args.save_every == 0:
