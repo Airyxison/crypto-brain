@@ -69,10 +69,11 @@ def main():
     # Metrics tracking
     episode_rewards  = []
     episode_reward   = 0.0
-    best_sortino     = -np.inf
+    best_sortino     = agent.best_sortino   # seeded from checkpoint on --resume, else -inf
+    print(f"[TRAIN] best_sortino initialized to {best_sortino:.4f}")
     loss_log         = []
-    action_counts    = [0] * 5
     ACTION_NAMES     = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
+    action_counts    = [0] * len(ACTION_NAMES)
 
     print(f"[TRAIN] Starting training for {args.steps} steps...")
     for step in tqdm(range(1, args.steps + 1), ncols=80):
@@ -117,6 +118,7 @@ def main():
 
             if sortino > best_sortino:
                 best_sortino = sortino
+                agent.best_sortino = best_sortino
                 best_path = save_dir / 'nova_brain_best.pt'
                 agent.save(str(best_path))
                 print(f"[TRAIN] New best Sortino: {sortino:.4f} → saved to {best_path}")

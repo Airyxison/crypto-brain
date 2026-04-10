@@ -66,6 +66,7 @@ class SAC:
         self.buffer = ReplayBuffer(capacity=self.buffer_size)
 
         self.steps = 0
+        self.best_sortino = -np.inf
 
     @property
     def alpha(self) -> float:
@@ -143,16 +144,17 @@ class SAC:
 
     def save(self, path: str):
         torch.save({
-            'actor':       self.actor.state_dict(),
-            'critic1':     self.critic1.state_dict(),
-            'critic2':     self.critic2.state_dict(),
-            'alpha_value': self.alpha_value,
-            'steps':       self.steps,
+            'actor':        self.actor.state_dict(),
+            'critic1':      self.critic1.state_dict(),
+            'critic2':      self.critic2.state_dict(),
+            'alpha_value':  self.alpha_value,
+            'steps':        self.steps,
+            'best_sortino': self.best_sortino,
         }, path)
         print(f"[SAC] Saved checkpoint → {path}")
 
     def load(self, path: str):
-        ck = torch.load(path, map_location=self.device)
+        ck = torch.load(path, map_location=self.device, weights_only=False)
         self.actor.load_state_dict(ck['actor'])
         self.critic1.load_state_dict(ck['critic1'])
         self.critic2.load_state_dict(ck['critic2'])
@@ -161,4 +163,5 @@ class SAC:
         # alpha is a hyperparameter — do not restore from checkpoint so
         # the caller can change it between runs without being overridden.
         self.steps = ck.get('steps', 0)
-        print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps})")
+        self.best_sortino = ck.get('best_sortino', -np.inf)
+        print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps}, best_sortino {self.best_sortino:.4f})")
