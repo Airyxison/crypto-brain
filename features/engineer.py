@@ -30,7 +30,7 @@ WINDOW_5M   = 300
 WINDOW_15M  = 900
 WINDOW_1H   = 3600
 WINDOW_4H   = 14400
-MIN_WINDOW  = WINDOW_15M  # minimum ticks before features are valid
+MIN_WINDOW  = WINDOW_5M   # 5 min of history to start — lower bar for POC
 
 
 class FeatureEngineer:

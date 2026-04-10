@@ -42,9 +42,9 @@ def main():
     # Load data
     print(f"[TRAIN] Loading ticks from {args.db}...")
     ticks = load_ticks_from_db(args.db, symbol=args.symbol)
-    if len(ticks) < 2000:
-        print(f"[TRAIN] Only {len(ticks)} ticks available. Run the Rust engine longer to collect more data.")
-        print("[TRAIN] Tip: the engine needs ~15 minutes to collect enough ticks for the feature window.")
+    print(f"[TRAIN] {len(ticks)} ticks loaded.")
+    if len(ticks) < 500:
+        print("[TRAIN] Need at least 500 ticks — let the engine run a few more minutes.")
         return
 
     # 80/20 train/test split

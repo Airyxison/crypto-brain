@@ -31,9 +31,10 @@ REALIZE_GAIN  = 3
 CANCEL_ORDER  = 4
 
 # Reward hyperparameters
-ALPHA = 0.5    # drawdown penalty weight
-BETA  = 0.10   # stop-loss hit penalty
-GAMMA = 0.0001 # losing hold cost per bar
+ALPHA   = 0.5    # drawdown penalty weight
+BETA    = 0.10   # stop-loss hit penalty
+GAMMA   = 0.0001 # losing hold cost per bar
+EPSILON = 0.0002 # opportunity cost: penalty for holding cash while market moves
 
 
 class TradingEnv(gym.Env):
@@ -49,7 +50,7 @@ class TradingEnv(gym.Env):
         self.config = config or {}
 
         self.initial_cash  = self.config.get('initial_cash', 10_000.0)
-        self.max_hold_bars = self.config.get('max_hold_bars', 1440)  # ~24h of ticks
+        self.max_hold_bars = self.config.get('max_hold_bars', 300)  # ~5 min for POC
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32
@@ -143,14 +144,24 @@ class TradingEnv(gym.Env):
         # Stop-loss hit — capital preservation is a hard constraint
         stop_penalty = -BETA if event.get('stop_hit') else 0.0
 
-        # Small cost for holding a losing position (encourages decisive exits)
+        # Cost for holding a losing position (encourages decisive exits)
         hold_cost = 0.0
         if self._ob.position:
             pnl_pct = self._ob.position.unrealized_pnl_pct(self.ticks[self._idx - 1]['price'])
             if pnl_pct < -0.01:
                 hold_cost = -GAMMA
 
-        return float(base - drawdown_penalty + stop_penalty + hold_cost)
+        # Opportunity cost: penalize sitting in cash when price is trending up
+        # Pushes the agent to act rather than default to permanent HOLD
+        opp_cost = 0.0
+        if not self._ob.position and not self._ob.pending_order and self._idx >= 2:
+            prev_price = self.ticks[self._idx - 2]['price']
+            curr_price = self.ticks[self._idx - 1]['price']
+            price_move = (curr_price - prev_price) / (prev_price + 1e-9)
+            if price_move > 0:
+                opp_cost = -EPSILON * price_move * 1000  # scaled to be noticeable
+
+        return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost)
 
     def _get_obs(self) -> np.ndarray:
         pos = self._ob.position
