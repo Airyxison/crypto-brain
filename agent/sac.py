@@ -40,8 +40,11 @@ class SAC:
         self.warmup_steps = cfg.get('warmup_steps',  1_000)
 
         # Learnable temperature (entropy coefficient)
-        self.log_alpha    = torch.tensor(np.log(0.1), requires_grad=True, device=self.device)
-        self.target_entropy = -np.log(1.0 / 5) * 0.98  # slightly below max entropy for 5 actions
+        # Start low — let the reward signal dominate early, entropy tunes up if needed
+        self.log_alpha      = torch.tensor(np.log(0.01), requires_grad=True, device=self.device)
+        # Target ~half max entropy — push agent toward commitment, not uniform randomness
+        # Max entropy for 5 actions = log(5) ≈ 1.609. Target 40% of that.
+        self.target_entropy = np.log(5) * 0.4
 
         # Networks
         self.actor    = Actor().to(self.device)
@@ -126,6 +129,10 @@ class SAC:
         alpha_loss = -self.log_alpha * (entropy.detach() - self.target_entropy)
 
         self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
+
+        # Clamp log_alpha — prevent temperature explosion that kills the reward signal
+        with torch.no_grad():
+            self.log_alpha.clamp_(-5.0, 1.0)  # alpha stays in [0.007, 2.72]
 
         # ---- Soft update target networks ----
         self._soft_update(self.critic1, self.target1)
