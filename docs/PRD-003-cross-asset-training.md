@@ -1,6 +1,6 @@
-# PRD-003 — Cross-Asset Training: ETH-USD and SOL-USD
+# PRD-003 — Cross-Asset Training: ETH-USD, SOL-USD, and ADA-USD
 
-**Status:** Blocked — waiting for ETH/SOL backfills to complete  
+**Status:** ETH/SOL training in progress; ADA backfill in progress  
 **Priority:** P1 — After PRD-001 and PRD-002  
 **Author:** Nova  
 **Date:** 2026-04-10
@@ -14,14 +14,15 @@ The current production policy was trained exclusively on BTC-USD tick data (525,
 1. May not generalize to other market structures (ETH and SOL have different volatility profiles, liquidity, and correlation patterns).
 2. Creates concentration risk — if the BTC policy degrades in a regime shift, there is no fallback.
 3. Limits the system to trading only one asset, which caps the earning potential.
+4. Only exposes the agent to trending/momentum regimes — range-bound behavior is not represented.
 
-ETH-USD and SOL-USD backfills are currently in progress (~525k ticks each expected). Once complete, cross-asset training becomes possible.
+ETH-USD and SOL-USD backfills are complete (~525k ticks each). ADA-USD backfill is in progress (kicked off 2026-04-10). ADA was selected over DOGE because it exhibits range-bound, mean-reverting price behavior — a regime the model does not currently see in BTC/ETH/SOL training data. This diversity is expected to improve stop discipline and reduce drawdown.
 
 ---
 
 ## Goal
 
-Train and evaluate the SAC agent on ETH-USD and SOL-USD. Produce per-asset checkpoints that meet the same quality bar as BTC (Sortino > 1.5, Return > +5%, Win Rate > 50%, Max Drawdown < -15%).
+Train and evaluate the SAC agent on ETH-USD, SOL-USD, and ADA-USD. Produce per-asset checkpoints that meet the same quality bar as BTC (Sortino > 1.5, Return > +5%, Win Rate > 50%, Max Drawdown < -15%).
 
 ---
 
@@ -29,7 +30,7 @@ Train and evaluate the SAC agent on ETH-USD and SOL-USD. Produce per-asset check
 
 1. PRD-001 (best_sortino bug fix) implemented.
 2. PRD-002 (drawdown reduction) completed for BTC — establishes the reward config that cross-asset training will inherit.
-3. ETH-USD and SOL-USD backfills complete (verify row counts in `ticks.db`).
+3. ETH-USD and SOL-USD backfills complete ✓. ADA-USD backfill in progress.
 
 ### Verify Backfill Completion
 
@@ -42,6 +43,7 @@ Expected output when ready:
 BTCUSDT|525200
 ETHUSDT|525000
 SOLUSDT|525000
+ADAUSDT|525000
 ```
 
 ---
@@ -106,8 +108,10 @@ To avoid confusion with BTC checkpoints, use asset-prefixed names:
 | `nova_brain_btc_best.pt` | Current BTC production policy |
 | `nova_brain_eth_best.pt` | Best ETH policy |
 | `nova_brain_sol_best.pt` | Best SOL policy |
+| `nova_brain_ada_best.pt` | Best ADA policy |
 | `nova_brain_eth_YYYYMMDD_sortino{X}.pt` | Permanent ETH backup |
 | `nova_brain_sol_YYYYMMDD_sortino{X}.pt` | Permanent SOL backup |
+| `nova_brain_ada_YYYYMMDD_sortino{X}.pt` | Permanent ADA backup |
 
 Rename the current BTC checkpoint to `nova_brain_btc_best.pt` before starting ETH/SOL runs.
 
@@ -162,7 +166,7 @@ Report the full metrics table for each asset. The same acceptance criteria apply
 
 ## Acceptance Criteria
 
-For each of ETH-USD and SOL-USD:
+For each of ETH-USD, SOL-USD, and ADA-USD:
 
 1. A trained checkpoint exists that achieves Sortino > 1.5 on the held-out test split.
 2. Max drawdown < -15%.
@@ -177,4 +181,6 @@ For each of ETH-USD and SOL-USD:
 
 - Do not begin cross-asset training until the ETH/SOL backfills are verified complete. Training on partial data would produce a biased policy that performs well on the available period but has degraded generalization.
 - ETH and SOL have historically higher volatility than BTC on a percentage basis. The drawdown target (-15%) may require tighter stops or lower capital fraction for these assets. Inherit the reward config from PRD-002 as the starting point but be prepared to tune per-asset.
+- ADA exhibits range-bound, mean-reverting behavior — different from the trending/momentum regime of BTC/ETH/SOL. Expect the policy to converge toward patience-rewarding strategies (smaller moves, tighter exits). The 0.5% stop from PRD-002 may actually suit ADA well given its lower volatility.
+- ADA was chosen over DOGE: less volatile, less susceptible to small-dollar liquidity issues, and its range behavior provides genuinely different training signal. DOGE remains a future candidate if liquidity modeling is added.
 - The longer-term goal is multi-asset simultaneous trading from crypto-engine. Per-asset policies are the foundation; a unified multi-asset policy is a future milestone beyond this PRD's scope.
