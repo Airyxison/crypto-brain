@@ -26,11 +26,12 @@ from backtest.runner import load_ticks_from_db, run_backtest
 def parse_args():
     p = argparse.ArgumentParser(description='Train Nova Brain SAC agent')
     p.add_argument('--db',       default='../crypto-engine/ticks.db', help='Path to SQLite tick DB')
-    p.add_argument('--steps',    type=int, default=50_000,  help='Total training steps')
+    p.add_argument('--steps',    type=int, default=200_000, help='Total training steps')
     p.add_argument('--save-dir', default='checkpoints',     help='Checkpoint directory')
-    p.add_argument('--save-every', type=int, default=5_000, help='Save checkpoint every N steps')
+    p.add_argument('--save-every', type=int, default=10_000, help='Save checkpoint every N steps')
     p.add_argument('--symbol',   default='BTCUSDT',         help='Asset symbol')
     p.add_argument('--resume',   default=None,              help='Resume from checkpoint path')
+    p.add_argument('--alpha',    type=float, default=None,  help='Override temperature alpha (e.g. 0.1)')
     return p.parse_args()
 
 
@@ -57,6 +58,9 @@ def main():
     agent = SAC()
     if args.resume:
         agent.load(args.resume)
+    if args.alpha is not None:
+        agent.alpha_value = args.alpha
+        print(f"[TRAIN] Alpha overridden → {args.alpha}")
 
     # Training environment (resets randomly within train split)
     env = TradingEnv(train_ticks)

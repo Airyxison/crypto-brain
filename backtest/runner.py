@@ -57,15 +57,35 @@ def run_backtest(
     config:   dict | None = None,
     verbose:  bool = True,
 ) -> dict:
-    env = TradingEnv(ticks, config)
-    obs, _ = env.reset()
+    # Override episode truncation for evaluation — run the full tick slice,
+    # not the short 200-step windows used during training.
+    eval_config = dict(config or {})
+    eval_config['max_episode_steps'] = len(ticks)
+
+    from features.engineer import FeatureEngineer, MIN_WINDOW
+    from environment.order_book import OrderBookSimulator
+
+    env = TradingEnv(ticks, eval_config)
+
+    # Deterministic reset: always start at MIN_WINDOW with a cleanly warmed
+    # FeatureEngineer — avoids the random-start / feature-state mismatch.
+    env._idx        = MIN_WINDOW
+    env._step_count = 0
+    env._ob         = OrderBookSimulator(env.initial_cash)
+    env._features   = FeatureEngineer()
+    for i in range(MIN_WINDOW):
+        t = ticks[i]
+        env._features.update(t['price'], t['volume'], t['trade_time'])
+    obs = env._get_obs()
 
     portfolio_values = [env._ob.portfolio_value]
     step_returns     = []
+    action_counts    = [0] * 5
     done = False
 
     while not done:
         action = agent.select_action(obs, deterministic=True)
+        action_counts[action] += 1
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
@@ -75,6 +95,11 @@ def run_backtest(
         if len(portfolio_values) >= 2:
             prev = portfolio_values[-2]
             step_returns.append((pv - prev) / (prev + 1e-9))
+
+    # Force-close any open position at last price so it registers as a trade
+    if env._ob.position:
+        last_price = ticks[env._idx - 1]['price']
+        env._ob.realize_gain(last_price)
 
     pv_arr     = np.array(portfolio_values)
     ret_arr    = np.array(step_returns) if step_returns else np.array([0.0])
@@ -99,7 +124,12 @@ def run_backtest(
         'final_value':       round(pv_arr[-1], 2),
         'portfolio_curve':   pv_arr.tolist(),
         'trades':            trades,
+        'action_counts':     action_counts,
     }
+
+    ACTION_NAMES = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
+    total_a = max(sum(action_counts), 1)
+    action_dist = '  '.join(f"{ACTION_NAMES[i]}:{action_counts[i]/total_a*100:.0f}%" for i in range(5))
 
     if verbose:
         print("\n" + "="*50)
@@ -112,6 +142,7 @@ def run_backtest(
         print(f"  Total Trades:   {results['total_trades']}")
         print(f"  Avg Hold:       {results['avg_hold_bars']:.0f} bars")
         print(f"  Final Value:    ${results['final_value']:,.2f}")
+        print(f"  Actions:        {action_dist}")
         print("="*50 + "\n")
 
     return results

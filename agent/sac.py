@@ -36,12 +36,13 @@ class SAC:
         self.tau          = cfg.get('tau',           0.005)   # soft update rate
         self.lr           = cfg.get('lr',            3e-4)
         self.batch_size   = cfg.get('batch_size',    256)
-        self.buffer_size  = cfg.get('buffer_size',   100_000)
+        self.buffer_size  = cfg.get('buffer_size',   200_000)
         self.warmup_steps = cfg.get('warmup_steps',  1_000)
 
         # Fixed temperature for POC — auto-tuning added back once loop is stable
-        # 0.2 gives meaningful exploration without drowning the reward signal
-        self.alpha_value = cfg.get('alpha', 0.2)
+        # 0.1 pushes the policy to exploit Q-values more strongly; was 0.2 but
+        # entropy barely moved after 50k steps so the exploration bonus was too dominant
+        self.alpha_value = cfg.get('alpha', 0.1)
         self.log_alpha   = None  # not used in fixed mode
         self.target_entropy = None
 
@@ -157,6 +158,7 @@ class SAC:
         self.critic2.load_state_dict(ck['critic2'])
         self.target1.load_state_dict(ck['critic1'])
         self.target2.load_state_dict(ck['critic2'])
-        self.alpha_value = ck.get('alpha_value', self.alpha_value)
+        # alpha is a hyperparameter — do not restore from checkpoint so
+        # the caller can change it between runs without being overridden.
         self.steps = ck.get('steps', 0)
         print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps})")
