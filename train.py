@@ -37,8 +37,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    save_dir = Path(args.save_dir)
-    save_dir.mkdir(exist_ok=True)
+    save_dir = Path(args.save_dir) / args.symbol.lower()
+    save_dir.mkdir(parents=True, exist_ok=True)
 
     # Load data
     print(f"[TRAIN] Loading ticks from {args.db}...")
