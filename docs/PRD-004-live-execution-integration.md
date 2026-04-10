@@ -272,3 +272,11 @@ Dashboard requirements (separate from this PRD, but noted for coordination with 
 - The `PaperOrderManager` must be the default in all code paths. Switching to `CoinbaseOrderManager` requires an explicit flag (`--live` or env var `NOVA_LIVE=1`).
 - Start with a small capital allocation (e.g., $500) for the first live month regardless of paper performance. Increase only after validating live behavior matches paper.
 - This PRD covers single-asset (BTC) live execution. Multi-asset live trading (PRD-003 extension) is a separate future milestone.
+
+## Future Signal Enhancements (Post-Launch)
+
+**Orderbook data** is worth revisiting once the live system is running. At inference time, a real-time orderbook snapshot (bid/ask imbalance, depth within 0.5% of mid, large resting orders) could add meaningful signal — particularly for predicting short-term reversals and avoiding entries into spoofed walls. This signal is most valuable at live inference resolution, not at 1-min candle aggregation.
+
+Not a priority now because: (1) historical orderbook data can't be backfilled, so it can't improve training until months of collection have accumulated; (2) crypto spoofing degrades the signal significantly and the model would need to learn to discount it; (3) the current bottleneck is drawdown, not signal quality.
+
+Revisit after 30-day paper phase is complete and live execution is stable.
