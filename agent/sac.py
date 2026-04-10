@@ -39,12 +39,11 @@ class SAC:
         self.buffer_size  = cfg.get('buffer_size',   100_000)
         self.warmup_steps = cfg.get('warmup_steps',  1_000)
 
-        # Learnable temperature (entropy coefficient)
-        # Start low — let the reward signal dominate early, entropy tunes up if needed
-        self.log_alpha      = torch.tensor(np.log(0.01), requires_grad=True, device=self.device)
-        # Target ~half max entropy — push agent toward commitment, not uniform randomness
-        # Max entropy for 5 actions = log(5) ≈ 1.609. Target 40% of that.
-        self.target_entropy = np.log(5) * 0.4
+        # Fixed temperature for POC — auto-tuning added back once loop is stable
+        # 0.2 gives meaningful exploration without drowning the reward signal
+        self.alpha_value = cfg.get('alpha', 0.2)
+        self.log_alpha   = None  # not used in fixed mode
+        self.target_entropy = None
 
         # Networks
         self.actor    = Actor().to(self.device)
@@ -58,10 +57,9 @@ class SAC:
         self.target2.load_state_dict(self.critic2.state_dict())
 
         # Optimizers
-        self.actor_opt  = torch.optim.Adam(self.actor.parameters(),   lr=self.lr)
+        self.actor_opt   = torch.optim.Adam(self.actor.parameters(),   lr=self.lr)
         self.critic1_opt = torch.optim.Adam(self.critic1.parameters(), lr=self.lr)
         self.critic2_opt = torch.optim.Adam(self.critic2.parameters(), lr=self.lr)
-        self.alpha_opt   = torch.optim.Adam([self.log_alpha],          lr=self.lr)
 
         # Replay buffer
         self.buffer = ReplayBuffer(capacity=self.buffer_size)
@@ -69,8 +67,8 @@ class SAC:
         self.steps = 0
 
     @property
-    def alpha(self) -> torch.Tensor:
-        return self.log_alpha.exp()
+    def alpha(self) -> float:
+        return self.alpha_value
 
     def select_action(self, state: np.ndarray, deterministic: bool = False) -> int:
         if self.steps < self.warmup_steps:
@@ -101,7 +99,7 @@ class SAC:
 
             # Soft Bellman: V(s') = Σ_a π(a|s') [Q(s',a) - α log π(a|s')]
             v_next = (next_probs * (min_q_next - self.alpha * next_log_probs)).sum(dim=1)
-            q_target = r + (1.0 - d) * self.gamma * v_next
+            q_target = r + (1.0 - d) * self.gamma * v_next.detach()
 
         q1 = self.critic1(s).gather(1, a.unsqueeze(1)).squeeze(1)
         q2 = self.critic2(s).gather(1, a.unsqueeze(1)).squeeze(1)
@@ -120,19 +118,11 @@ class SAC:
             min_q = torch.min(q1_s, q2_s)
 
         # Maximize E[Q] + entropy
-        actor_loss = (probs * (self.alpha.detach() * log_probs - min_q)).sum(dim=1).mean()
+        actor_loss = (probs * (self.alpha * log_probs - min_q)).sum(dim=1).mean()
 
         self.actor_opt.zero_grad(); actor_loss.backward(); self.actor_opt.step()
 
-        # ---- Temperature update ----
         entropy = -(probs * log_probs).sum(dim=1).mean()
-        alpha_loss = -self.log_alpha * (entropy.detach() - self.target_entropy)
-
-        self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
-
-        # Clamp log_alpha — prevent temperature explosion that kills the reward signal
-        with torch.no_grad():
-            self.log_alpha.clamp_(-5.0, 1.0)  # alpha stays in [0.007, 2.72]
 
         # ---- Soft update target networks ----
         self._soft_update(self.critic1, self.target1)
@@ -142,7 +132,7 @@ class SAC:
             'critic1_loss': critic1_loss.item(),
             'critic2_loss': critic2_loss.item(),
             'actor_loss':   actor_loss.item(),
-            'alpha':        self.alpha.item(),
+            'alpha':        self.alpha,
             'entropy':      entropy.item(),
         }
 
@@ -152,11 +142,11 @@ class SAC:
 
     def save(self, path: str):
         torch.save({
-            'actor':     self.actor.state_dict(),
-            'critic1':   self.critic1.state_dict(),
-            'critic2':   self.critic2.state_dict(),
-            'log_alpha': self.log_alpha.detach(),
-            'steps':     self.steps,
+            'actor':       self.actor.state_dict(),
+            'critic1':     self.critic1.state_dict(),
+            'critic2':     self.critic2.state_dict(),
+            'alpha_value': self.alpha_value,
+            'steps':       self.steps,
         }, path)
         print(f"[SAC] Saved checkpoint → {path}")
 
@@ -167,6 +157,6 @@ class SAC:
         self.critic2.load_state_dict(ck['critic2'])
         self.target1.load_state_dict(ck['critic1'])
         self.target2.load_state_dict(ck['critic2'])
-        self.log_alpha = torch.tensor(ck['log_alpha'], requires_grad=True, device=self.device)
+        self.alpha_value = ck.get('alpha_value', self.alpha_value)
         self.steps = ck.get('steps', 0)
         print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps})")
