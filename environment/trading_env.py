@@ -91,7 +91,8 @@ class TradingEnv(gym.Env):
         volume = tick['volume']
         t_ms   = tick['trade_time']
 
-        prev_pv = self._ob.portfolio_value
+        prev_pv           = self._ob.portfolio_value
+        prev_realized_pnl = self._ob.realized_pnl  # track for realized-gain bonus
 
         # Execute action
         self._execute_action(action, price)
@@ -102,8 +103,11 @@ class TradingEnv(gym.Env):
         self._idx       += 1
         self._step_count += 1
 
+        # Realized PnL delta this step — positive only when a trade just closed
+        step_realized = self._ob.realized_pnl - prev_realized_pnl
+
         # Compute reward — scaled up so Q-network can differentiate
-        reward = self._compute_reward(prev_pv, event) * 1000.0
+        reward = self._compute_reward(prev_pv, event, step_realized) * 1000.0
 
         # Check termination
         terminated = (
@@ -136,7 +140,7 @@ class TradingEnv(gym.Env):
             self._ob.cancel_order()
         # HOLD: no-op
 
-    def _compute_reward(self, prev_pv: float, event: dict) -> float:
+    def _compute_reward(self, prev_pv: float, event: dict, step_realized: float = 0.0) -> float:
         current_pv = self._ob.portfolio_value
 
         # Base return (signed, fractional)
@@ -156,17 +160,26 @@ class TradingEnv(gym.Env):
             if pnl_pct < -0.01:
                 hold_cost = -GAMMA
 
-        # Opportunity cost: penalize sitting in cash when price is trending up
-        # Pushes the agent to act rather than default to permanent HOLD
+        # Opportunity cost: penalize sitting in cash when price trends up.
+        # NOTE: no inner *1000 — the outer *1000 in step() is the only amplifier.
+        # Previous version had *1e6 compound scale which overwhelmed the base signal.
         opp_cost = 0.0
         if not self._ob.position and not self._ob.pending_order and self._idx >= 2:
             prev_price = self.ticks[self._idx - 2]['price']
             curr_price = self.ticks[self._idx - 1]['price']
             price_move = (curr_price - prev_price) / (prev_price + 1e-9)
             if price_move > 0:
-                opp_cost = -EPSILON * price_move * 1000  # scaled to be noticeable
+                opp_cost = -EPSILON * price_move
 
-        return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost)
+        # Realized gain bonus — explicit credit assignment when a trade closes.
+        # Asymmetric: amplify wins more than losses to encourage profitable closes
+        # over stop-outs. Losses are already penalized by stop_penalty.
+        realized_bonus = 0.0
+        if step_realized != 0.0:
+            pct = step_realized / (prev_pv + 1e-9)
+            realized_bonus = pct * 5.0 if pct > 0 else pct
+
+        return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus)
 
     def _get_obs(self) -> np.ndarray:
         pos = self._ob.position
