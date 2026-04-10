@@ -8,6 +8,7 @@ Two critic networks (Q1, Q2) for clipped double-Q to reduce overestimation.
 Architecture kept intentionally small for POC — scale up after proving the loop.
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -87,6 +88,3 @@ class Critic(nn.Module):
         """Returns Q values for all actions. Shape: (batch, action_dim)"""
         return self.net(state)
 
-
-# Fix missing import in Actor.act
-import numpy as np
