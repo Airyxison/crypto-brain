@@ -67,6 +67,7 @@ class OrderBookSimulator:
     # Limit disc = 0 for POC: fills on next tick (market-like, eliminates credit delay)
     DEFAULT_STOP_PCT    = 0.005
     DEFAULT_LIMIT_DISC  = 0.0
+    FEE_RATE            = 0.001  # 0.1% per side (Coinbase taker fee)
 
     def __init__(self, initial_cash: float = 10_000.0):
         self.cash: float              = initial_cash
@@ -171,11 +172,13 @@ class OrderBookSimulator:
 
     def _fill_buy(self, fill_price: float):
         cost = self.pending_order.size * fill_price
-        self.cash -= cost
+        entry_fee = cost * self.FEE_RATE
+        total_cost = cost + entry_fee
+        self.cash -= total_cost
         self.position = Position(
             entry_price=fill_price,
             size=self.pending_order.size,
-            cost_basis=cost,
+            cost_basis=total_cost,  # fee baked in so PnL is after-fee
             entry_bar=self.current_bar,
             stop_price=fill_price * (1.0 - self.DEFAULT_STOP_PCT),
             peak_price=fill_price,
@@ -190,9 +193,11 @@ class OrderBookSimulator:
         if not self.position:
             return
         proceeds = self.position.size * price
-        pnl = proceeds - self.position.cost_basis
+        exit_fee = proceeds * self.FEE_RATE
+        net_proceeds = proceeds - exit_fee
+        pnl = net_proceeds - self.position.cost_basis
         self.realized_pnl += pnl
-        self.cash += proceeds
+        self.cash += net_proceeds
         self.trades.append({
             'entry_price': self.position.entry_price,
             'exit_price': price,

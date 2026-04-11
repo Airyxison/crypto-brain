@@ -1,0 +1,41 @@
+{
+  "queue": [
+    {
+      "id": "btc-v2-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "Fresh BTC run with fee model + MIN_HOLD_BARS reward fix",
+      "status": "pending"
+    },
+    {
+      "id": "eth-v2-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "ETH with new reward — was -27.9% due to overtrading",
+      "status": "pending"
+    },
+    {
+      "id": "sol-v2-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "SOL with new reward — was -7.86%, tighter stop may still be issue",
+      "status": "pending"
+    },
+    {
+      "id": "ada-v2-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "ADA with new reward — was +3.69%, range-bound behaviour helps",
+      "status": "pending"
+    }
+  ],
+  "completed": []
+}

@@ -31,10 +31,11 @@ REALIZE_GAIN  = 3
 CANCEL_ORDER  = 4
 
 # Reward hyperparameters
-ALPHA   = 0.5    # drawdown penalty weight
-BETA    = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
-GAMMA   = 0.0001 # losing hold cost per bar
-EPSILON = 0.0002 # opportunity cost: penalty for holding cash while market moves
+ALPHA         = 0.5    # drawdown penalty weight
+BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
+GAMMA         = 0.0001 # losing hold cost per bar
+EPSILON       = 0.0001 # opportunity cost: penalty for holding cash while market moves
+MIN_HOLD_BARS = 20     # minimum bars before a realized-gain bonus is awarded
 
 
 class TradingEnv(gym.Env):
@@ -93,6 +94,8 @@ class TradingEnv(gym.Env):
 
         prev_pv           = self._ob.portfolio_value
         prev_realized_pnl = self._ob.realized_pnl  # track for realized-gain bonus
+        # Bars held before this action fires (used by _compute_reward for min-hold check)
+        prev_bars_held    = (self._idx - self._ob.position.entry_bar) if self._ob.position else 0
 
         # Execute action
         self._execute_action(action, price)
@@ -107,7 +110,7 @@ class TradingEnv(gym.Env):
         step_realized = self._ob.realized_pnl - prev_realized_pnl
 
         # Compute reward — scaled up so Q-network can differentiate
-        reward = self._compute_reward(prev_pv, event, step_realized) * 1000.0
+        reward = self._compute_reward(prev_pv, event, step_realized, prev_bars_held) * 1000.0
 
         # Check termination
         terminated = (
@@ -140,7 +143,7 @@ class TradingEnv(gym.Env):
             self._ob.cancel_order()
         # HOLD: no-op
 
-    def _compute_reward(self, prev_pv: float, event: dict, step_realized: float = 0.0) -> float:
+    def _compute_reward(self, prev_pv: float, event: dict, step_realized: float = 0.0, bars_held: int = 0) -> float:
         current_pv = self._ob.portfolio_value
 
         # Base return (signed, fractional)
@@ -172,12 +175,15 @@ class TradingEnv(gym.Env):
                 opp_cost = -EPSILON * price_move
 
         # Realized gain bonus — explicit credit assignment when a trade closes.
-        # Asymmetric: amplify wins more than losses to encourage profitable closes
-        # over stop-outs. Losses are already penalized by stop_penalty.
+        # Requires MIN_HOLD_BARS held before awarding any bonus; premature exits
+        # get a small penalty to discourage scalping sub-penny moves after fees.
         realized_bonus = 0.0
         if step_realized != 0.0:
             pct = step_realized / (prev_pv + 1e-9)
-            realized_bonus = pct * 1.5 if pct > 0 else pct
+            if bars_held >= MIN_HOLD_BARS:
+                realized_bonus = pct  # 1:1, no amplifier — fees do the heavy lifting
+            else:
+                realized_bonus = -abs(pct) * 0.5  # premature exit penalty
 
         return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus)
 
