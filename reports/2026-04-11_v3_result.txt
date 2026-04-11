@@ -1,0 +1,75 @@
+Nova Trader — v3 Evaluation Report
+Date: 2026-04-11
+Iteration: 2 (v3 = fee model + MIN_HOLD_BARS=40)
+Training: 200k steps each, alpha=0.05, fresh start (no resume)
+
+============================================================
+BACKTEST RESULTS (eval set: 100,000 ticks, 20% holdout)
+============================================================
+
+BTC  (checkpoints/btcusdt/nova_brain_best.pt @ step 59745)
+  Total Return:   +0.00%
+  Sortino:         0.0000
+  Max Drawdown:    0.00%
+  Total Trades:    0
+  Avg Hold:        0 bars
+  Win Rate:        0.0%
+  Note: Policy collapsed — agent learned to never buy. MIN_HOLD_BARS=40
+        made entering positions too costly; HOLD-only is the local optimum.
+
+ETH  (checkpoints/ethusdt/nova_brain_best.pt @ step 9745)
+  Total Return:   +0.00%
+  Sortino:         0.0000
+  Max Drawdown:    0.00%
+  Total Trades:    0
+  Avg Hold:        0 bars
+  Win Rate:        0.0%
+  Note: Same policy collapse as BTC. 80% of actions are ADJ_STOP (no-ops
+        without an open position). Complete no-trade regime.
+
+SOL  (checkpoints/solusdt/nova_brain_best.pt @ step 9745)
+  Total Return:   +0.00%
+  Sortino:         0.0000
+  Max Drawdown:    0.00%
+  Total Trades:    0
+  Avg Hold:        0 bars
+  Win Rate:        0.0%
+  Note: Same policy collapse. Never learned to enter positions.
+
+ADA  (checkpoints/adausdt/nova_brain_best.pt @ step 39745)
+  Total Return:   -71.57%
+  Sortino:        -8.1079
+  Max Drawdown:  -71.60%
+  Total Trades:   489
+  Avg Hold:       138 bars
+  Win Rate:       19.2%
+  Exit reasons:  stop_loss=454 (93%), realized=35 (7%)
+  Note: Only asset that maintained an active policy. Avg hold 138 bars
+        (respects MIN_HOLD_BARS=40). But 93% stop-loss exits destroyed
+        returns. 1% stop too tight for ADA volatility.
+
+============================================================
+PASS/FAIL SUMMARY (criteria: Return>=0%, Hold>=18 bars, Trades<=400)
+============================================================
+  BTC:  Return ✓  Hold ✗  Trades ✓  → FAIL (no trades)
+  ETH:  Return ✓  Hold ✗  Trades ✓  → FAIL (no trades)
+  SOL:  Return ✓  Hold ✗  Trades ✓  → FAIL (no trades)
+  ADA:  Return ✗  Hold ✓  Trades ✗  → FAIL
+  Passing: 0/4
+
+============================================================
+DIAGNOSTIC RULES vs JUDGMENT CALL
+============================================================
+  Mechanic rule: avg_hold < 18 on 3+ assets → double MIN_HOLD_BARS (40→80)
+  OVERRIDDEN: doubling again would worsen policy collapse.
+
+  v3 root cause: MIN_HOLD_BARS=40 drove BTC/ETH/SOL to no-trade policies.
+  v2 (MIN_HOLD_BARS=20) had 3 assets with active policies; v3 had only 1.
+  Evidence: all three collapsed checkpoints are at step 9745 (sortino 0.0),
+  meaning agents converged to "never buy" within the first 10k steps and
+  never recovered.
+
+============================================================
+ACTION: Queue v4 (final iteration) — revert MIN_HOLD_BARS to 20,
+        increase SAC alpha 0.05→0.08 for more exploration entropy
+============================================================

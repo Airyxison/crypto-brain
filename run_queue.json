@@ -1,39 +1,39 @@
 {
   "queue": [
     {
-      "id": "btc-v3-200k",
+      "id": "btc-v4-200k",
       "symbol": "BTCUSDT",
       "steps": 200000,
-      "alpha": 0.05,
+      "alpha": 0.08,
       "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (BTC avg_hold=0 bars, SOL avg_hold=1 bar in v2)",
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
       "status": "pending"
     },
     {
-      "id": "eth-v3-200k",
+      "id": "eth-v4-200k",
       "symbol": "ETHUSDT",
       "steps": 200000,
-      "alpha": 0.05,
+      "alpha": 0.08,
       "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ETH had 516 trades, 94% stop-loss exits in v2)",
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
       "status": "pending"
     },
     {
-      "id": "sol-v3-200k",
+      "id": "sol-v4-200k",
       "symbol": "SOLUSDT",
       "steps": 200000,
-      "alpha": 0.05,
+      "alpha": 0.08,
       "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (SOL avg_hold=1 bar in v2 despite positive return)",
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
       "status": "pending"
     },
     {
-      "id": "ada-v3-200k",
+      "id": "ada-v4-200k",
       "symbol": "ADAUSDT",
       "steps": 200000,
-      "alpha": 0.05,
+      "alpha": 0.08,
       "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ADA had 98% stop-loss exits, -37.47% return in v2)",
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
       "status": "pending"
     }
   ],
@@ -81,6 +81,50 @@
       "status": "completed",
       "started_at": "2026-04-11T16:09:26.193528+00:00",
       "completed_at": "2026-04-11T17:31:28.719863+00:00"
+    },
+    {
+      "id": "btc-v3-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (BTC avg_hold=0 bars, SOL avg_hold=1 bar in v2)",
+      "status": "completed",
+      "started_at": "2026-04-11T17:44:24.720806+00:00",
+      "completed_at": "2026-04-11T19:05:37.054509+00:00"
+    },
+    {
+      "id": "eth-v3-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ETH had 516 trades, 94% stop-loss exits in v2)",
+      "status": "completed",
+      "started_at": "2026-04-11T19:05:37.055369+00:00",
+      "completed_at": "2026-04-11T20:25:43.911241+00:00"
+    },
+    {
+      "id": "sol-v3-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (SOL avg_hold=1 bar in v2 despite positive return)",
+      "status": "completed",
+      "started_at": "2026-04-11T20:25:43.912068+00:00",
+      "completed_at": "2026-04-11T21:45:40.667292+00:00"
+    },
+    {
+      "id": "ada-v3-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ADA had 98% stop-loss exits, -37.47% return in v2)",
+      "status": "completed",
+      "started_at": "2026-04-11T21:45:40.668558+00:00",
+      "completed_at": "2026-04-11T23:05:21.496163+00:00"
     }
   ]
 }

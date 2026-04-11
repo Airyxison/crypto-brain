@@ -35,7 +35,7 @@ ALPHA         = 0.5    # drawdown penalty weight
 BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
 GAMMA         = 0.0001 # losing hold cost per bar
 EPSILON       = 0.0001 # opportunity cost: penalty for holding cash while market moves
-MIN_HOLD_BARS = 40     # minimum bars before a realized-gain bonus is awarded
+MIN_HOLD_BARS = 20     # minimum bars before a realized-gain bonus is awarded
 
 
 class TradingEnv(gym.Env):
