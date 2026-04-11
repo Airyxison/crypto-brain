@@ -1,0 +1,72 @@
+Nova Trader — v2 Evaluation Report
+Date: 2026-04-11
+Iteration: 2 (v2 = fee model + MIN_HOLD_BARS=20)
+Training: 200k steps each, alpha=0.05, fresh start (no resume)
+
+============================================================
+BACKTEST RESULTS (eval set: 100,000 ticks, 20% holdout)
+============================================================
+
+BTC  (checkpoints/btcusdt/nova_brain_best.pt @ step 9745)
+  Total Return:   +0.00%
+  Sortino:         0.0000
+  Max Drawdown:    0.00%
+  Total Trades:    0
+  Avg Hold:        0 bars
+  Win Rate:        0.0%
+  Note: Degenerate policy — agent never enters positions. best.pt frozen
+        at step 9745 (sortino 0.0) because Sortino never improved in
+        200k steps. HOLD-only behaviour throughout training.
+
+ETH  (checkpoints/ethusdt/nova_brain_best.pt @ step 169745)
+  Total Return:   -72.71%
+  Sortino:        -7.7711
+  Max Drawdown:  -73.79%
+  Total Trades:   516
+  Avg Hold:       77 bars
+  Win Rate:       22.1%
+  Exit reasons:  stop_loss=485 (94%), realized=31 (6%)
+  Note: Agent enters positions frequently but almost all stopped out.
+        1% stop too tight for ETH intraday volatility range.
+
+SOL  (checkpoints/solusdt/nova_brain_best.pt @ step 169745)
+  Total Return:   +2.00%
+  Sortino:         0.0763
+  Max Drawdown:   -3.27%
+  Total Trades:   31
+  Avg Hold:        1 bar
+  Win Rate:       35.5%
+  Exit reasons:  realized=31 (100%)
+  Note: Positive return but avg hold = 1 bar (MIN_HOLD_BARS not respected
+        at eval time). Very low trade count (31). Policy barely buys (BUY=0%).
+
+ADA  (checkpoints/adausdt/nova_brain_best.pt @ step 199745)
+  Total Return:   -37.47%
+  Sortino:        -2.8784
+  Max Drawdown:  -39.75%
+  Total Trades:   284
+  Avg Hold:       82 bars
+  Win Rate:       31.0%
+  Exit reasons:  stop_loss=278 (98%), realized=6 (2%)
+  Note: Agent enters positions but 98% hit stop. Same stop-volatility
+        mismatch as ETH.
+
+============================================================
+PASS/FAIL SUMMARY (criteria: Return>=0%, Hold>=18 bars, Trades<=400)
+============================================================
+  BTC:  Return ✓  Hold ✗  Trades ✓  → FAIL
+  ETH:  Return ✗  Hold ✓  Trades ✗  → FAIL
+  SOL:  Return ✓  Hold ✗  Trades ✓  → FAIL
+  ADA:  Return ✗  Hold ✓  Trades ✓  → FAIL
+  Passing: 0/4
+
+============================================================
+DIAGNOSTIC RULES APPLIED
+============================================================
+  avg_hold < 18 on 2+ assets: YES (BTC=0, SOL=1) → MIN_HOLD_BARS 20 → 40
+  trades > 400 on 2+ assets:  NO  (only ETH=516)
+  return < -10% on 3+ assets: NO  (only ETH, ADA)
+
+============================================================
+ACTION: Queue v3 — MIN_HOLD_BARS=40, all other params unchanged
+============================================================

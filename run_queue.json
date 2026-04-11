@@ -1,13 +1,53 @@
 {
   "queue": [
     {
+      "id": "btc-v3-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (BTC avg_hold=0 bars, SOL avg_hold=1 bar in v2)",
+      "status": "pending"
+    },
+    {
+      "id": "eth-v3-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ETH had 516 trades, 94% stop-loss exits in v2)",
+      "status": "pending"
+    },
+    {
+      "id": "sol-v3-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (SOL avg_hold=1 bar in v2 despite positive return)",
+      "status": "pending"
+    },
+    {
+      "id": "ada-v3-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ADA had 98% stop-loss exits, -37.47% return in v2)",
+      "status": "pending"
+    }
+  ],
+  "completed": [
+    {
       "id": "btc-v2-200k",
       "symbol": "BTCUSDT",
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
       "notes": "Fresh BTC run with fee model + MIN_HOLD_BARS reward fix",
-      "status": "pending"
+      "status": "completed",
+      "started_at": "2026-04-11T12:05:37.886803+00:00",
+      "completed_at": "2026-04-11T13:27:02.824056+00:00"
     },
     {
       "id": "eth-v2-200k",
@@ -15,8 +55,10 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "ETH with new reward — was -27.9% due to overtrading",
-      "status": "pending"
+      "notes": "ETH with new reward \u2014 was -27.9% due to overtrading",
+      "status": "completed",
+      "started_at": "2026-04-11T13:27:02.824507+00:00",
+      "completed_at": "2026-04-11T14:48:07.146478+00:00"
     },
     {
       "id": "sol-v2-200k",
@@ -24,8 +66,10 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "SOL with new reward — was -7.86%, tighter stop may still be issue",
-      "status": "pending"
+      "notes": "SOL with new reward \u2014 was -7.86%, tighter stop may still be issue",
+      "status": "completed",
+      "started_at": "2026-04-11T14:48:07.146963+00:00",
+      "completed_at": "2026-04-11T16:09:26.193083+00:00"
     },
     {
       "id": "ada-v2-200k",
@@ -33,9 +77,10 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "ADA with new reward — was +3.69%, range-bound behaviour helps",
-      "status": "pending"
+      "notes": "ADA with new reward \u2014 was +3.69%, range-bound behaviour helps",
+      "status": "completed",
+      "started_at": "2026-04-11T16:09:26.193528+00:00",
+      "completed_at": "2026-04-11T17:31:28.719863+00:00"
     }
-  ],
-  "completed": []
+  ]
 }
