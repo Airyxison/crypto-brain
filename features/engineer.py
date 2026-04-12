@@ -51,6 +51,17 @@ class FeatureEngineer:
     def ready(self) -> bool:
         return self._ready
 
+    @property
+    def current_volatility(self) -> float:
+        """Raw (unclipped) 1h realized volatility — for stop-loss sizing at entry.
+        Returns 0.0 if not enough history yet."""
+        if not self._ready or len(self.prices) < 2:
+            return 0.0
+        prices = np.array(self.prices, dtype=np.float64)
+        n1h = min(WINDOW_1H, len(prices))
+        returns_1h = np.diff(prices[-n1h:]) / prices[-n1h:-1]
+        return float(returns_1h.std()) if len(returns_1h) > 1 else 0.0
+
     def extract(self, position_state: dict) -> np.ndarray:
         """
         position_state = {

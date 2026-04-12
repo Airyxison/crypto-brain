@@ -134,7 +134,8 @@ class TradingEnv(gym.Env):
 
     def _execute_action(self, action: int, price: float):
         if action == BUY_LIMIT:
-            self._ob.place_buy_limit(price)
+            vol = self._features.current_volatility if self._features.ready else 0.0
+            self._ob.place_buy_limit(price, volatility=vol)
         elif action == ADJUST_STOP:
             self._ob.adjust_stop(price)
         elif action == REALIZE_GAIN:

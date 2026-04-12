@@ -1,5 +1,42 @@
 {
-  "queue": [],
+  "queue": [
+    {
+      "id": "btc-v5-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) — root cause fix for fixed-stop problem",
+      "status": "pending"
+    },
+    {
+      "id": "eth-v5-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v5: volatility-adaptive stop — ETH kept collapsing with fixed 0.5% stop",
+      "status": "pending"
+    },
+    {
+      "id": "sol-v5-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v5: volatility-adaptive stop — SOL needs ~1% stop, was getting 0.5%",
+      "status": "pending"
+    },
+    {
+      "id": "ada-v5-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v5: control — ADA passed at v4, should remain stable with adaptive stop",
+      "status": "pending"
+    }
+  ],
   "completed": [
     {
       "id": "btc-v2-200k",

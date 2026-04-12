@@ -16,10 +16,11 @@ from typing import Optional
 
 @dataclass
 class LimitOrder:
-    side: str           # 'buy' or 'sell'
+    side: str              # 'buy' or 'sell'
     limit_price: float
-    size: float         # fraction of capital (0-1)
-    placed_at: int      # bar index when placed
+    size: float            # fraction of capital (0-1)
+    placed_at: int         # bar index when placed
+    entry_volatility: float = 0.0  # volatility_1h at placement — sizes the initial stop
     expiry_bars: int = 120  # expire after 2 minutes of ticks by default
 
     def is_expired(self, current_bar: int) -> bool:
@@ -40,6 +41,7 @@ class Position:
     entry_bar: int
     stop_price: float   # dynamic stop-loss level
     peak_price: float   # highest price seen since entry (for trailing stop)
+    stop_pct: float = 0.005  # stop % computed from entry volatility; used for trailing
 
     def unrealized_pnl(self, current_price: float) -> float:
         return (current_price - self.entry_price) * self.size
@@ -63,9 +65,14 @@ class OrderBookSimulator:
     Call tick() on each new price to process fills and stops.
     """
 
-    # Default stop: 2% below entry.
-    # Limit disc = 0 for POC: fills on next tick (market-like, eliminates credit delay)
-    DEFAULT_STOP_PCT    = 0.005
+    # Volatility-adaptive stop: stop_pct = STOP_K * volatility_1h, clamped to [MIN, MAX].
+    # K=2.5 means the stop fires at ~2.5 standard deviations of adverse movement —
+    # tight for calm assets (ADA ~0.25%), wide for volatile ones (SOL ~1.0%).
+    STOP_K           = 2.5
+    MIN_STOP_PCT     = 0.003   # floor: 0.3% — never tighter even in the calmest market
+    MAX_STOP_PCT     = 0.05    # ceiling: 5% — never wider even in extreme volatility
+    DEFAULT_STOP_PCT = 0.005   # fallback when volatility is unknown (features not warm)
+
     DEFAULT_LIMIT_DISC  = 0.0
     FEE_RATE            = 0.001  # 0.1% per side (Coinbase taker fee)
 
@@ -123,8 +130,10 @@ class OrderBookSimulator:
     # Actions (called by the RL agent via the environment)
     # -------------------------------------------------------------------------
 
-    def place_buy_limit(self, current_price: float, capital_fraction: float = 0.9) -> bool:
-        """Place a limit buy order below current price. Returns True if placed."""
+    def place_buy_limit(self, current_price: float, capital_fraction: float = 0.9,
+                        volatility: float = 0.0) -> bool:
+        """Place a limit buy order below current price. Returns True if placed.
+        volatility: current volatility_1h from FeatureEngineer — used to size the stop."""
         if self.pending_order or self.position:
             return False  # already have order or position
         if self.cash <= 0:
@@ -138,16 +147,17 @@ class OrderBookSimulator:
             limit_price=limit_price,
             size=size,
             placed_at=self.current_bar,
+            entry_volatility=volatility,
         )
         return True
 
     def adjust_stop(self, current_price: float) -> bool:
-        """Trail stop up to lock in gains. Only tightens, never loosens."""
+        """Trail stop up to lock in gains. Only tightens, never loosens.
+        Uses the same stop_pct derived from entry volatility for consistency."""
         if not self.position:
             return False
 
-        # Trail: stop = max(current_stop, peak_price * (1 - stop_pct))
-        new_stop = self.position.peak_price * (1.0 - self.DEFAULT_STOP_PCT)
+        new_stop = self.position.peak_price * (1.0 - self.position.stop_pct)
         if new_stop > self.position.stop_price:
             self.position.stop_price = new_stop
         return True
@@ -171,6 +181,13 @@ class OrderBookSimulator:
     # -------------------------------------------------------------------------
 
     def _fill_buy(self, fill_price: float):
+        # Compute volatility-adaptive stop percentage
+        vol = self.pending_order.entry_volatility
+        if vol > 0:
+            stop_pct = max(self.MIN_STOP_PCT, min(self.MAX_STOP_PCT, self.STOP_K * vol))
+        else:
+            stop_pct = self.DEFAULT_STOP_PCT
+
         cost = self.pending_order.size * fill_price
         entry_fee = cost * self.FEE_RATE
         total_cost = cost + entry_fee
@@ -180,8 +197,9 @@ class OrderBookSimulator:
             size=self.pending_order.size,
             cost_basis=total_cost,  # fee baked in so PnL is after-fee
             entry_bar=self.current_bar,
-            stop_price=fill_price * (1.0 - self.DEFAULT_STOP_PCT),
+            stop_price=fill_price * (1.0 - stop_pct),
             peak_price=fill_price,
+            stop_pct=stop_pct,
         )
         self.pending_order = None
 

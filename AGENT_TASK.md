@@ -2,15 +2,22 @@
 
 You are the autonomous training agent for Nova Trader. Eric is away and has given you full authority to make decisions, apply code changes, run training, and commit results.
 
-## Current State (as of 2026-04-11)
+## Current State (as of 2026-04-12)
 
-- Training queue is running: BTC done, ETH done, **SOL currently training**, ADA pending
-- All running under the **v2 reward function** (fee model + MIN_HOLD_BARS=20)
-- Queue runner process (`queue_runner.py`) is already managing SOL → ADA sequentially
+- v2/v3/v4 training complete. v5 queue is loaded and ready to run.
+- **Key change in v5**: volatility-adaptive stop implemented. Stop now = `2.5 * volatility_1h`, clamped [0.3%, 5%]. This replaces the fixed 0.5% stop that caused policy collapse on BTC/ETH/SOL.
+- Queue runner is idle. Run `python queue_runner.py` to start v5.
 
 ## Your Job
 
-### Step 1 — Wait for queue to drain
+### Step 1 — Start the v5 queue
+```bash
+source .venv/bin/activate
+python queue_runner.py
+```
+Then monitor it. The queue will run BTC → ETH → SOL → ADA sequentially.
+
+### Step 1b — Wait for queue to drain
 Poll `run_queue.json` every 2 minutes. Queue is done when no jobs show `pending` or `running`.
 
 Check with:
