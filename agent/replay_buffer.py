@@ -11,7 +11,7 @@ import torch
 
 
 class ReplayBuffer:
-    def __init__(self, capacity: int = 100_000, state_dim: int = 13):
+    def __init__(self, capacity: int = 100_000, state_dim: int = 16):
         self.capacity  = capacity
         self.state_dim = state_dim
         self.ptr       = 0

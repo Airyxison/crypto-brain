@@ -22,6 +22,7 @@ import numpy as np
 
 from agent.networks import Actor, Critic
 from agent.replay_buffer import ReplayBuffer
+from agent.networks import STATE_DIM
 
 
 class SAC:
@@ -63,7 +64,7 @@ class SAC:
         self.critic2_opt = torch.optim.Adam(self.critic2.parameters(), lr=self.lr)
 
         # Replay buffer
-        self.buffer = ReplayBuffer(capacity=self.buffer_size)
+        self.buffer = ReplayBuffer(capacity=self.buffer_size, state_dim=STATE_DIM)
 
         self.steps = 0
         self.best_sortino = -np.inf

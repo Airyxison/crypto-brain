@@ -1,16 +1,6 @@
 {
   "queue": [
     {
-      "id": "btc-v5-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) \u2014 root cause fix for fixed-stop problem",
-      "status": "running",
-      "started_at": "2026-04-12T13:38:28.225941+00:00"
-    },
-    {
       "id": "eth-v5-200k",
       "symbol": "ETHUSDT",
       "steps": 200000,
@@ -35,42 +25,6 @@
       "alpha": 0.05,
       "resume": null,
       "notes": "v5: control \u2014 ADA passed at v4, should remain stable with adaptive stop",
-      "status": "pending"
-    },
-    {
-      "id": "btc-v6-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v6: adaptive stop + 16-dim obs (momentum_1d/7d/30d regime features). INCOMPATIBLE with v5 — fresh training only.",
-      "status": "pending"
-    },
-    {
-      "id": "eth-v6-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v6: adaptive stop + regime features. ETH collapsed in all prior runs — macro context should help.",
-      "status": "pending"
-    },
-    {
-      "id": "sol-v6-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v6: adaptive stop + regime features. SOL had +2% at v2 — best candidate for improvement.",
-      "status": "pending"
-    },
-    {
-      "id": "ada-v6-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v6: adaptive stop + regime features. ADA control — should still pass, now with macro context.",
       "status": "pending"
     }
   ],
@@ -206,6 +160,17 @@
       "status": "completed",
       "started_at": "2026-04-12T03:19:29.151936+00:00",
       "completed_at": "2026-04-12T04:40:41.736705+00:00"
+    },
+    {
+      "id": "btc-v5-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) \u2014 root cause fix for fixed-stop problem",
+      "status": "completed",
+      "started_at": "2026-04-12T13:38:28.225941+00:00",
+      "completed_at": "2026-04-12T15:05:39.719688+00:00"
     }
   ]
 }
