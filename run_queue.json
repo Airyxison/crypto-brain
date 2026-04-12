@@ -6,8 +6,9 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) — root cause fix for fixed-stop problem",
-      "status": "pending"
+      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) \u2014 root cause fix for fixed-stop problem",
+      "status": "running",
+      "started_at": "2026-04-12T13:38:28.225941+00:00"
     },
     {
       "id": "eth-v5-200k",
@@ -15,7 +16,7 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v5: volatility-adaptive stop — ETH kept collapsing with fixed 0.5% stop",
+      "notes": "v5: volatility-adaptive stop \u2014 ETH kept collapsing with fixed 0.5% stop",
       "status": "pending"
     },
     {
@@ -24,7 +25,7 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v5: volatility-adaptive stop — SOL needs ~1% stop, was getting 0.5%",
+      "notes": "v5: volatility-adaptive stop \u2014 SOL needs ~1% stop, was getting 0.5%",
       "status": "pending"
     },
     {
@@ -33,7 +34,43 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v5: control — ADA passed at v4, should remain stable with adaptive stop",
+      "notes": "v5: control \u2014 ADA passed at v4, should remain stable with adaptive stop",
+      "status": "pending"
+    },
+    {
+      "id": "btc-v6-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v6: adaptive stop + 16-dim obs (momentum_1d/7d/30d regime features). INCOMPATIBLE with v5 — fresh training only.",
+      "status": "pending"
+    },
+    {
+      "id": "eth-v6-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v6: adaptive stop + regime features. ETH collapsed in all prior runs — macro context should help.",
+      "status": "pending"
+    },
+    {
+      "id": "sol-v6-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v6: adaptive stop + regime features. SOL had +2% at v2 — best candidate for improvement.",
+      "status": "pending"
+    },
+    {
+      "id": "ada-v6-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.05,
+      "resume": null,
+      "notes": "v6: adaptive stop + regime features. ADA control — should still pass, now with macro context.",
       "status": "pending"
     }
   ],

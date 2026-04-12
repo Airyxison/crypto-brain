@@ -1,8 +1,8 @@
 """
 Neural Networks — SAC (Discrete Action Space)
 ---------------------------------------------
-Actor:   state (13) → action logits (5) → softmax policy
-Critic:  state (13) → Q values for all 5 actions
+Actor:   state (16) → action logits (5) → softmax policy
+Critic:  state (16) → Q values for all 5 actions
 Two critic networks (Q1, Q2) for clipped double-Q to reduce overestimation.
 
 Architecture kept intentionally small for POC — scale up after proving the loop.
@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-STATE_DIM  = 13
+STATE_DIM  = 16  # 13 base + 3 macro regime features (momentum_1d/7d/30d)
 ACTION_DIM = 5
 HIDDEN     = 128  # small for POC, scale to 256/512 later
 

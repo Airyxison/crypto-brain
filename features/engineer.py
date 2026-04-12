@@ -1,7 +1,7 @@
 """
 Feature Engineering
 -------------------
-Converts raw tick data into a normalized 13-dimensional state vector.
+Converts raw tick data into a normalized 16-dimensional state vector.
 Operates on a rolling window — no lookahead, no leakage.
 
 Features:
@@ -18,26 +18,32 @@ Features:
   [10] distance_to_stop    — (price - stop) / price, 0 if no position
   [11] trade_frequency     — ticks per minute normalized to recent avg
   [12] price_vs_range      — (price - 4h_low) / (4h_high - 4h_low)
+  [13] momentum_1d         — 24h return (macro intraday trend)
+  [14] momentum_7d         — 7-day return (weekly regime)
+  [15] momentum_30d        — 30-day return (macro bull/bear regime)
 """
 
 import numpy as np
 from collections import deque
 
 
-# Tick window requirements
-WINDOW_1M   = 60       # ~60 ticks/min at 1Hz
+# Tick window requirements (all in bars = 1-minute candles)
+WINDOW_1M   = 60
 WINDOW_5M   = 300
 WINDOW_15M  = 900
-WINDOW_1H   = 3600
-WINDOW_4H   = 14400
-MIN_WINDOW  = WINDOW_5M   # 5 min of history to start — lower bar for POC
+WINDOW_1H   = 3_600
+WINDOW_4H   = 14_400
+WINDOW_1D   = 1_440    # 24 hours
+WINDOW_7D   = 10_080   # 7 days
+WINDOW_30D  = 43_200   # 30 days — macro regime window
+MIN_WINDOW  = WINDOW_5M   # 5 min of history to start — regime features degrade gracefully
 
 
 class FeatureEngineer:
     def __init__(self):
-        self.prices     = deque(maxlen=WINDOW_4H)
-        self.volumes    = deque(maxlen=WINDOW_4H)
-        self.times      = deque(maxlen=WINDOW_4H)  # trade_time in ms
+        self.prices     = deque(maxlen=WINDOW_30D)  # 30 days — supports macro regime features
+        self.volumes    = deque(maxlen=WINDOW_30D)
+        self.times      = deque(maxlen=WINDOW_30D)
         self._ready     = False
 
     def update(self, price: float, volume: float, trade_time: int):
@@ -135,21 +141,31 @@ class FeatureEngineer:
         if in_pos and stop and current > 0:
             dist_to_stop = np.clip((current - stop) / current, 0.0, 1.0)
 
+        # Macro regime features — multi-timescale momentum so the model can
+        # distinguish short noise from a week-long trend from a 30-day bear market.
+        # Gracefully degrades: if less than N bars of history exist, uses what's available.
+        momentum_1d  = _momentum(WINDOW_1D)
+        momentum_7d  = _momentum(WINDOW_7D)
+        momentum_30d = _momentum(WINDOW_30D)
+
         # Assemble state vector
         state = np.array([
-            float(np.clip(price_vs_range, 0.0, 1.0)),       # [0]
+            float(np.clip(price_vs_range, 0.0, 1.0)),          # [0]
             float(np.clip(_momentum(WINDOW_1M),  -0.1, 0.1)),  # [1]
             float(np.clip(_momentum(WINDOW_5M),  -0.2, 0.2)),  # [2]
             float(np.clip(_momentum(WINDOW_15M), -0.3, 0.3)),  # [3]
-            float(np.clip(volatility_1h, 0.0, 0.1)),         # [4]
-            float(np.clip(volume_norm, -3.0, 3.0)),          # [5]
-            float(np.clip(vwap_deviation, -0.05, 0.05)),     # [6]
-            in_pos,                                          # [7]
-            float(position_pnl),                             # [8]
-            float(time_in_pos),                              # [9]
-            float(dist_to_stop),                             # [10]
-            float(np.clip(trade_frequency, -3.0, 3.0)),      # [11]
-            float(np.clip(price_vs_range, 0.0, 1.0)),        # [12]
+            float(np.clip(volatility_1h, 0.0, 0.1)),           # [4]
+            float(np.clip(volume_norm, -3.0, 3.0)),            # [5]
+            float(np.clip(vwap_deviation, -0.05, 0.05)),       # [6]
+            in_pos,                                            # [7]
+            float(position_pnl),                               # [8]
+            float(time_in_pos),                                # [9]
+            float(dist_to_stop),                               # [10]
+            float(np.clip(trade_frequency, -3.0, 3.0)),        # [11]
+            float(np.clip(price_vs_range, 0.0, 1.0)),          # [12]
+            float(np.clip(momentum_1d,  -0.2, 0.2)),           # [13] 24h trend
+            float(np.clip(momentum_7d,  -0.5, 0.5)),           # [14] weekly regime
+            float(np.clip(momentum_30d, -1.0, 1.0)),           # [15] macro bull/bear
         ], dtype=np.float32)
 
         return state

@@ -4,7 +4,7 @@ Trading Environment
 Gymnasium-compatible environment wrapping the order book simulator
 and feature engineer. Steps through historical tick data.
 
-Observation: 13-dim float32 vector (see features/engineer.py)
+Observation: 16-dim float32 vector (see features/engineer.py)
 Action:      Discrete(5)
   0 = HOLD
   1 = PLACE_BUY_LIMIT
@@ -56,7 +56,7 @@ class TradingEnv(gym.Env):
         self._step_count       = 0
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(13,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(16,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(5)
 
@@ -199,4 +199,4 @@ class TradingEnv(gym.Env):
         }
         if self._features.ready:
             return self._features.extract(position_state)
-        return np.zeros(13, dtype=np.float32)
+        return np.zeros(16, dtype=np.float32)
