@@ -7,6 +7,29 @@
 
 ---
 
+## Injection Sequencing — When This Gets Built
+
+The stablecoin yield layer must be injected **after** the spot model demonstrates it can reliably identify and act on market moves. The sequencing is non-negotiable:
+
+**1. Spot model learns to see moves** *(current work)*  
+The model identifies entries, holds appropriately, exits profitably. No yield comparison yet — adding it before the model has edge would teach "never trade" (can't beat guaranteed yield when you have no reliable signal).
+
+**2. Stablecoin yield as a pre-trade gate** *(Phase 0 — inject here first)*  
+Before firing a trade: *"Is the expected return on this trade better than holding USDC for the same duration?"*  
+- USDC/USDT earning ~4-5% APY (tracks Fed funds rate) becomes the risk-free baseline
+- Idle cash earns yield in the order book simulator (small per-bar credit)
+- Reward function reframes opportunity cost: not "are you missing the price move?" but "are you beating stablecoin yield?"
+- This makes `MIN_HOLD_BARS` enforcement natural rather than artificial — a 2-bar trade making 0.2% doesn't clear the yield hurdle; the model learns this without being told
+- Implementation: `STABLECOIN_APY` constant in `order_book.py`, cash earns per-bar yield when idle, reward baseline shifts accordingly
+
+**3. Yield-bearing stablecoin as an explicit action** *(Phase 1 — flexible staking)*  
+The model can actively choose: stay in USDC earning yield vs. deploy into a trade. ADA native staking (no unbonding) is the cleanest first vehicle.
+
+**4. Lock-in staking** *(Phase 2+)*  
+See below.
+
+---
+
 ## Overview
 
 This PRD describes a second trading layer that sits above the spot trading model. Where the spot model decides *whether to hold an asset*, the staking layer decides *whether the yield from locking that asset justifies surrendering liquidity for a defined period*.
