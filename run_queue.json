@@ -1,42 +1,5 @@
 {
-  "queue": [
-    {
-      "id": "btc-v4-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "pending"
-    },
-    {
-      "id": "eth-v4-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "pending"
-    },
-    {
-      "id": "sol-v4-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "pending"
-    },
-    {
-      "id": "ada-v4-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "pending"
-    }
-  ],
+  "queue": [],
   "completed": [
     {
       "id": "btc-v2-200k",
@@ -125,6 +88,50 @@
       "status": "completed",
       "started_at": "2026-04-11T21:45:40.668558+00:00",
       "completed_at": "2026-04-11T23:05:21.496163+00:00"
+    },
+    {
+      "id": "btc-v4-200k",
+      "symbol": "BTCUSDT",
+      "steps": 200000,
+      "alpha": 0.08,
+      "resume": null,
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
+      "status": "completed",
+      "started_at": "2026-04-11T23:18:38.968285+00:00",
+      "completed_at": "2026-04-12T00:38:18.544259+00:00"
+    },
+    {
+      "id": "eth-v4-200k",
+      "symbol": "ETHUSDT",
+      "steps": 200000,
+      "alpha": 0.08,
+      "resume": null,
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
+      "status": "completed",
+      "started_at": "2026-04-12T00:38:18.545392+00:00",
+      "completed_at": "2026-04-12T01:58:23.632897+00:00"
+    },
+    {
+      "id": "sol-v4-200k",
+      "symbol": "SOLUSDT",
+      "steps": 200000,
+      "alpha": 0.08,
+      "resume": null,
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
+      "status": "completed",
+      "started_at": "2026-04-12T01:58:23.633411+00:00",
+      "completed_at": "2026-04-12T03:19:29.151382+00:00"
+    },
+    {
+      "id": "ada-v4-200k",
+      "symbol": "ADAUSDT",
+      "steps": 200000,
+      "alpha": 0.08,
+      "resume": null,
+      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
+      "status": "completed",
+      "started_at": "2026-04-12T03:19:29.151936+00:00",
+      "completed_at": "2026-04-12T04:40:41.736705+00:00"
     }
   ]
 }
