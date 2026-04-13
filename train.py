@@ -116,7 +116,8 @@ def main():
             results = run_backtest(agent, test_ticks, verbose=True)
             sortino = results['sortino_ratio']
 
-            if sortino > best_sortino:
+            total_trades = results.get('total_trades', 0)
+            if sortino > best_sortino and total_trades > 0:
                 best_sortino = sortino
                 agent.best_sortino = best_sortino
                 best_path = save_dir / 'nova_brain_best.pt'

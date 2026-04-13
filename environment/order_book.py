@@ -69,7 +69,7 @@ class OrderBookSimulator:
     # K=2.5 means the stop fires at ~2.5 standard deviations of adverse movement —
     # tight for calm assets (ADA ~0.25%), wide for volatile ones (SOL ~1.0%).
     STOP_K           = 2.5
-    MIN_STOP_PCT     = 0.003   # floor: 0.3% — never tighter even in the calmest market
+    MIN_STOP_PCT     = 0.005   # floor: 0.5% — never tighter even in the calmest market
     MAX_STOP_PCT     = 0.05    # ceiling: 5% — never wider even in extreme volatility
     DEFAULT_STOP_PCT = 0.005   # fallback when volatility is unknown (features not warm)
 
