@@ -36,7 +36,7 @@ class SAC:
         self.gamma        = cfg.get('gamma',        0.99)
         self.tau          = cfg.get('tau',           0.005)   # soft update rate
         self.lr           = cfg.get('lr',            3e-4)
-        self.batch_size   = cfg.get('batch_size',    256)
+        self.batch_size   = cfg.get('batch_size',   1024)
         self.buffer_size  = cfg.get('buffer_size',   200_000)
         self.warmup_steps = cfg.get('warmup_steps',  1_000)
 

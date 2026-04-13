@@ -83,7 +83,8 @@ def main():
 
         action_counts[action] += 1
         agent.store(obs, action, reward, next_obs, done)
-        losses = agent.train_step()
+        for _ in range(4):  # 4 gradient updates per env step — keeps GPU busy
+            losses = agent.train_step() or losses
         if losses:
             loss_log.append(losses)
 

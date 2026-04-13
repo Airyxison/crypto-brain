@@ -16,7 +16,7 @@ import torch.nn.functional as F
 
 STATE_DIM  = 16  # 13 base + 3 macro regime features (momentum_1d/7d/30d)
 ACTION_DIM = 5
-HIDDEN     = 128  # small for POC, scale to 256/512 later
+HIDDEN     = 256  # scaled up for GPU utilization (T4 was underloaded at 128)
 
 
 class Actor(nn.Module):
