@@ -23,6 +23,17 @@ from agent.sac import SAC
 from backtest.runner import load_ticks_from_db, run_backtest
 
 
+def s3_upload(local_path: str, s3_key: str, bucket: str = 'nova-trader-data-249899228939-us-east-1-an'):
+    """Upload a file to S3. Silently skips if boto3/credentials unavailable."""
+    try:
+        import boto3
+        s3 = boto3.client('s3')
+        s3.upload_file(local_path, bucket, s3_key)
+        print(f"[S3] Uploaded → s3://{bucket}/{s3_key}")
+    except Exception as e:
+        print(f"[S3] Upload skipped ({e})")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description='Train Nova Brain SAC agent')
     p.add_argument('--db',       default='../crypto-engine/ticks.db', help='Path to SQLite tick DB')
@@ -114,6 +125,7 @@ def main():
         if step % args.save_every == 0:
             ck_path = save_dir / f'nova_brain_step{step}.pt'
             agent.save(str(ck_path))
+            s3_upload(str(ck_path), f'checkpoints/{args.symbol.lower()}/nova_brain_step{step}.pt')
 
             # Quick backtest on test split
             print("[TRAIN] Running validation backtest...")
@@ -126,6 +138,7 @@ def main():
                 agent.best_sortino = best_sortino
                 best_path = save_dir / 'nova_brain_best.pt'
                 agent.save(str(best_path))
+                s3_upload(str(best_path), f'checkpoints/{args.symbol.lower()}/nova_brain_best.pt')
                 print(f"[TRAIN] New best Sortino: {sortino:.4f} → saved to {best_path}")
 
     # Final backtest
@@ -133,7 +146,9 @@ def main():
     final_results = run_backtest(agent, test_ticks, verbose=True)
 
     # Save final
-    agent.save(str(save_dir / 'nova_brain_final.pt'))
+    final_path = save_dir / 'nova_brain_final.pt'
+    agent.save(str(final_path))
+    s3_upload(str(final_path), f'checkpoints/{args.symbol.lower()}/nova_brain_final.pt')
     print("[TRAIN] Done.")
 
 
