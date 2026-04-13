@@ -6,25 +6,26 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v6: best.pt freeze fix (total_trades>0 guard) + MIN_STOP_PCT 0.3%→0.5%; BTC was passing final.pt, retrain with fixes for clean best.pt",
-      "status": "pending"
+      "notes": "v6: best.pt freeze fix (total_trades>0 guard) + MIN_STOP_PCT 0.3%\u21920.5%; BTC was passing final.pt, retrain with fixes for clean best.pt",
+      "status": "running",
+      "started_at": "2026-04-13T01:35:09.831985+00:00"
     },
     {
       "id": "eth-v6-200k",
       "symbol": "ETHUSDT",
       "steps": 200000,
-      "alpha": 0.10,
+      "alpha": 0.1,
       "resume": null,
-      "notes": "v6: alpha 0.05→0.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
+      "notes": "v6: alpha 0.05\u21920.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
       "status": "pending"
     },
     {
       "id": "sol-v6-200k",
       "symbol": "SOLUSDT",
       "steps": 200000,
-      "alpha": 0.10,
+      "alpha": 0.1,
       "resume": null,
-      "notes": "v6: alpha 0.05→0.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
+      "notes": "v6: alpha 0.05\u21920.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
       "status": "pending"
     },
     {
@@ -33,7 +34,7 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v6: MIN_STOP_PCT 0.3%→0.5% (ADA vol_1h too low for old floor, causing over-stopping); best.pt fix",
+      "notes": "v6: MIN_STOP_PCT 0.3%\u21920.5% (ADA vol_1h too low for old floor, causing over-stopping); best.pt fix",
       "status": "pending"
     }
   ],
