@@ -6,9 +6,8 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v6: best.pt freeze fix (total_trades>0 guard) + MIN_STOP_PCT 0.3%\u21920.5%; BTC was passing final.pt, retrain with fixes for clean best.pt",
-      "status": "running",
-      "started_at": "2026-04-13T01:35:09.831985+00:00"
+      "notes": "v6 restart: best.pt freeze fix + 2-year dataset. Previous btc-v6 run was invalid (ran before freeze fix).",
+      "status": "pending"
     },
     {
       "id": "eth-v6-200k",
@@ -16,7 +15,7 @@
       "steps": 200000,
       "alpha": 0.1,
       "resume": null,
-      "notes": "v6: alpha 0.05\u21920.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
+      "notes": "v6 restart: best.pt freeze fix + 2-year dataset + alpha=0.10 (zero-trade escape).",
       "status": "pending"
     },
     {
@@ -25,7 +24,7 @@
       "steps": 200000,
       "alpha": 0.1,
       "resume": null,
-      "notes": "v6: alpha 0.05\u21920.10 (zero-trade trap escape) + best.pt fix + MIN_STOP_PCT 0.5% floor",
+      "notes": "v6 restart: best.pt freeze fix + 2-year dataset + alpha=0.10.",
       "status": "pending"
     },
     {
@@ -34,197 +33,9 @@
       "steps": 200000,
       "alpha": 0.05,
       "resume": null,
-      "notes": "v6: MIN_STOP_PCT 0.3%\u21920.5% (ADA vol_1h too low for old floor, causing over-stopping); best.pt fix",
+      "notes": "v6 restart: best.pt freeze fix + 2-year dataset + MIN_STOP_PCT=0.5%.",
       "status": "pending"
     }
   ],
-  "completed": [
-    {
-      "id": "btc-v2-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "Fresh BTC run with fee model + MIN_HOLD_BARS reward fix",
-      "status": "completed",
-      "started_at": "2026-04-11T12:05:37.886803+00:00",
-      "completed_at": "2026-04-11T13:27:02.824056+00:00"
-    },
-    {
-      "id": "eth-v2-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "ETH with new reward \u2014 was -27.9% due to overtrading",
-      "status": "completed",
-      "started_at": "2026-04-11T13:27:02.824507+00:00",
-      "completed_at": "2026-04-11T14:48:07.146478+00:00"
-    },
-    {
-      "id": "sol-v2-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "SOL with new reward \u2014 was -7.86%, tighter stop may still be issue",
-      "status": "completed",
-      "started_at": "2026-04-11T14:48:07.146963+00:00",
-      "completed_at": "2026-04-11T16:09:26.193083+00:00"
-    },
-    {
-      "id": "ada-v2-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "ADA with new reward \u2014 was +3.69%, range-bound behaviour helps",
-      "status": "completed",
-      "started_at": "2026-04-11T16:09:26.193528+00:00",
-      "completed_at": "2026-04-11T17:31:28.719863+00:00"
-    },
-    {
-      "id": "btc-v3-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (BTC avg_hold=0 bars, SOL avg_hold=1 bar in v2)",
-      "status": "completed",
-      "started_at": "2026-04-11T17:44:24.720806+00:00",
-      "completed_at": "2026-04-11T19:05:37.054509+00:00"
-    },
-    {
-      "id": "eth-v3-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ETH had 516 trades, 94% stop-loss exits in v2)",
-      "status": "completed",
-      "started_at": "2026-04-11T19:05:37.055369+00:00",
-      "completed_at": "2026-04-11T20:25:43.911241+00:00"
-    },
-    {
-      "id": "sol-v3-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (SOL avg_hold=1 bar in v2 despite positive return)",
-      "status": "completed",
-      "started_at": "2026-04-11T20:25:43.912068+00:00",
-      "completed_at": "2026-04-11T21:45:40.667292+00:00"
-    },
-    {
-      "id": "ada-v3-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v3: MIN_HOLD_BARS doubled 20->40 (ADA had 98% stop-loss exits, -37.47% return in v2)",
-      "status": "completed",
-      "started_at": "2026-04-11T21:45:40.668558+00:00",
-      "completed_at": "2026-04-11T23:05:21.496163+00:00"
-    },
-    {
-      "id": "btc-v4-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "completed",
-      "started_at": "2026-04-11T23:18:38.968285+00:00",
-      "completed_at": "2026-04-12T00:38:18.544259+00:00"
-    },
-    {
-      "id": "eth-v4-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "completed",
-      "started_at": "2026-04-12T00:38:18.545392+00:00",
-      "completed_at": "2026-04-12T01:58:23.632897+00:00"
-    },
-    {
-      "id": "sol-v4-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "completed",
-      "started_at": "2026-04-12T01:58:23.633411+00:00",
-      "completed_at": "2026-04-12T03:19:29.151382+00:00"
-    },
-    {
-      "id": "ada-v4-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.08,
-      "resume": null,
-      "notes": "v4 FINAL: reverted MIN_HOLD_BARS 40->20 (v3 caused policy collapse), alpha 0.05->0.08 for more exploration",
-      "status": "completed",
-      "started_at": "2026-04-12T03:19:29.151936+00:00",
-      "completed_at": "2026-04-12T04:40:41.736705+00:00"
-    },
-    {
-      "id": "btc-v5-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5: volatility-adaptive stop (K=2.5, 0.3%-5% clamp) \u2014 root cause fix for fixed-stop problem",
-      "status": "completed",
-      "started_at": "2026-04-12T13:38:28.225941+00:00",
-      "completed_at": "2026-04-12T15:05:39.719688+00:00"
-    },
-    {
-      "id": "eth-v5-200k",
-      "symbol": "ETHUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5: volatility-adaptive stop \u2014 ETH kept collapsing with fixed 0.5% stop",
-      "status": "completed",
-      "started_at": "2026-04-12T15:15:03.046901+00:00",
-      "completed_at": "2026-04-12T17:52:37.538983+00:00"
-    },
-    {
-      "id": "sol-v5-200k",
-      "symbol": "SOLUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5: volatility-adaptive stop \u2014 SOL needs ~1% stop, was getting 0.5%",
-      "status": "completed",
-      "started_at": "2026-04-12T17:52:37.542261+00:00",
-      "completed_at": "2026-04-12T20:16:41.293884+00:00"
-    },
-    {
-      "id": "ada-v5-200k",
-      "symbol": "ADAUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5: control \u2014 ADA passed at v4, should remain stable with adaptive stop",
-      "status": "completed",
-      "started_at": "2026-04-12T20:16:41.297076+00:00",
-      "completed_at": "2026-04-12T22:48:11.453989+00:00"
-    },
-    {
-      "id": "btc-v5b-200k",
-      "symbol": "BTCUSDT",
-      "steps": 200000,
-      "alpha": 0.05,
-      "resume": null,
-      "notes": "v5 redo: BTC-v5 was 13-dim (pre-fix); retraining with 16-dim obs space",
-      "status": "completed",
-      "started_at": "2026-04-12T22:50:40.346989+00:00",
-      "completed_at": "2026-04-13T01:26:09.307532+00:00"
-    }
-  ]
+  "completed": []
 }
