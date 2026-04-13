@@ -58,7 +58,8 @@ class Actor(nn.Module):
     def act(self, state: np.ndarray, deterministic: bool = False) -> int:
         """Inference-time action selection."""
         import numpy as np
-        t = torch.FloatTensor(state).unsqueeze(0)
+        device = next(self.parameters()).device
+        t = torch.FloatTensor(state).unsqueeze(0).to(device)
         probs, _ = self.forward(t)
         if deterministic:
             return int(probs.argmax(dim=-1).item())
