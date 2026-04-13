@@ -11,8 +11,8 @@
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::nova-trader-data",
-        "arn:aws:s3:::nova-trader-data/*"
+        "arn:aws:s3:::nova-trader-data-249899228939-us-east-1-an",
+        "arn:aws:s3:::nova-trader-data-249899228939-us-east-1-an/*"
       ]
     }
   ]
