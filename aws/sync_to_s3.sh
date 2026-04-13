@@ -16,7 +16,6 @@ fi
 SIZE=$(du -sh "$DB_PATH" | cut -f1)
 echo "Uploading ticks.db ($SIZE) → s3://$S3_BUCKET/ticks/ticks.db"
 aws s3 cp "$DB_PATH" "s3://$S3_BUCKET/ticks/ticks.db" \
-    --region "$AWS_REGION" \
-    --progress
+    --region "$AWS_REGION"
 
 echo "Done. Tick data available for EC2 training instances."

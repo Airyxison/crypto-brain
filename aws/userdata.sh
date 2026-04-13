@@ -6,7 +6,7 @@
 set -euo pipefail
 exec > /var/log/nova-bootstrap.log 2>&1
 
-S3_BUCKET="nova-trader-data"          # <-- EDIT THIS to your bucket name
+S3_BUCKET="nova-trader-data-249899228939-us-east-1-an"          # <-- EDIT THIS to your bucket name
 AWS_REGION="us-east-1"
 GITHUB_REPO="https://github.com/Airyxison/crypto-brain.git"
 UBUNTU_HOME="/home/ubuntu"
