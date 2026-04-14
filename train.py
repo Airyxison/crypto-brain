@@ -10,10 +10,14 @@ The script:
   3. Runs SAC training loop
   4. Saves checkpoint every N steps
   5. Runs backtest on test split at the end
+
+W&B dashboard:
+  Set WANDB_API_KEY env var to enable. Each symbol runs as a separate W&B run
+  so you can compare BTC/ETH/SOL/ADA side-by-side. Skipped silently if unset.
 """
 
 import argparse
-import sqlite3
+import os
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
@@ -22,6 +26,59 @@ from environment.trading_env import TradingEnv
 from agent.sac import SAC
 from backtest.runner import load_ticks_from_db, run_backtest
 
+
+# ---------------------------------------------------------------------------
+# W&B — opt-in, no-op if API key not set
+# ---------------------------------------------------------------------------
+
+def wandb_init(args, agent):
+    """Initialize W&B run. Returns run object or None."""
+    if not os.environ.get('WANDB_API_KEY'):
+        print("[W&B] WANDB_API_KEY not set — skipping dashboard.")
+        return None
+    try:
+        import wandb
+        run = wandb.init(
+            project='nova-brain',
+            name=f"{args.symbol}-v{args.steps//1000}k-a{args.alpha}",
+            config={
+                'symbol':    args.symbol,
+                'steps':     args.steps,
+                'alpha':     args.alpha,
+                'save_every': args.save_every,
+            },
+            reinit=True,
+        )
+        print(f"[W&B] Dashboard → {run.url}")
+        return run
+    except Exception as e:
+        print(f"[W&B] Init failed ({e}) — continuing without dashboard.")
+        return None
+
+
+def wandb_log(run, payload: dict):
+    if run is None:
+        return
+    try:
+        import wandb
+        wandb.log(payload)
+    except Exception:
+        pass
+
+
+def wandb_finish(run):
+    if run is None:
+        return
+    try:
+        import wandb
+        wandb.finish()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# S3 checkpoint sync
+# ---------------------------------------------------------------------------
 
 def s3_upload(local_path: str, s3_key: str, bucket: str = 'nova-trader-data-249899228939-us-east-1-an'):
     """Upload a file to S3. Silently skips if boto3/credentials unavailable."""
@@ -34,17 +91,25 @@ def s3_upload(local_path: str, s3_key: str, bucket: str = 'nova-trader-data-2498
         print(f"[S3] Upload skipped ({e})")
 
 
+# ---------------------------------------------------------------------------
+# Args
+# ---------------------------------------------------------------------------
+
 def parse_args():
     p = argparse.ArgumentParser(description='Train Nova Brain SAC agent')
-    p.add_argument('--db',       default='/root/crypto-engine/ticks.db', help='Path to SQLite tick DB')
-    p.add_argument('--steps',    type=int, default=200_000, help='Total training steps')
-    p.add_argument('--save-dir', default='checkpoints',     help='Checkpoint directory')
-    p.add_argument('--save-every', type=int, default=10_000, help='Save checkpoint every N steps')
-    p.add_argument('--symbol',   default='BTCUSDT',         help='Asset symbol')
-    p.add_argument('--resume',   default=None,              help='Resume from checkpoint path')
-    p.add_argument('--alpha',    type=float, default=None,  help='Override temperature alpha (e.g. 0.1)')
+    p.add_argument('--db',         default='/root/crypto-engine/ticks.db', help='Path to SQLite tick DB')
+    p.add_argument('--steps',      type=int, default=200_000, help='Total training steps')
+    p.add_argument('--save-dir',   default='checkpoints',     help='Checkpoint directory')
+    p.add_argument('--save-every', type=int, default=10_000,  help='Save checkpoint every N steps')
+    p.add_argument('--symbol',     default='BTCUSDT',         help='Asset symbol')
+    p.add_argument('--resume',     default=None,              help='Resume from checkpoint path')
+    p.add_argument('--alpha',      type=float, default=None,  help='Override temperature alpha (e.g. 0.1)')
     return p.parse_args()
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()
@@ -60,7 +125,7 @@ def main():
         return
 
     # 80/20 train/test split
-    split     = int(len(ticks) * 0.8)
+    split       = int(len(ticks) * 0.8)
     train_ticks = ticks[:split]
     test_ticks  = ticks[split:]
     print(f"[TRAIN] {len(train_ticks)} train ticks | {len(test_ticks)} test ticks")
@@ -73,18 +138,21 @@ def main():
         agent.alpha_value = args.alpha
         print(f"[TRAIN] Alpha overridden → {args.alpha}")
 
+    # W&B run — no-op if WANDB_API_KEY not set
+    wb = wandb_init(args, agent)
+
     # Training environment (resets randomly within train split)
     env = TradingEnv(train_ticks)
     obs, _ = env.reset()
 
     # Metrics tracking
-    episode_rewards  = []
-    episode_reward   = 0.0
-    best_sortino     = agent.best_sortino   # seeded from checkpoint on --resume, else -inf
+    episode_rewards = []
+    episode_reward  = 0.0
+    best_sortino    = agent.best_sortino
     print(f"[TRAIN] best_sortino initialized to {best_sortino:.4f}")
-    loss_log         = []
-    ACTION_NAMES     = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
-    action_counts    = [0] * len(ACTION_NAMES)
+    loss_log     = []
+    ACTION_NAMES = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
+    action_counts = [0] * len(ACTION_NAMES)
 
     print(f"[TRAIN] Starting training for {args.steps} steps...")
     for step in tqdm(range(1, args.steps + 1), ncols=80):
@@ -97,6 +165,7 @@ def main():
         action_taken = info.get('action_taken', action)
         action_counts[action_taken] += 1
         agent.store(obs, action_taken, reward, next_obs, done)
+
         losses = None
         for _ in range(4):  # 4 gradient updates per env step — keeps GPU busy
             result = agent.train_step()
@@ -113,45 +182,86 @@ def main():
             episode_reward = 0.0
             obs, _ = env.reset()
 
-        # Periodic logging
+        # Periodic logging — every 1k steps
         if step % 1000 == 0:
             recent_rewards = episode_rewards[-10:] if episode_rewards else [0]
             avg_reward = np.mean(recent_rewards)
-            alpha   = loss_log[-1]['alpha']   if loss_log else 0
-            entropy = loss_log[-1]['entropy'] if loss_log else 0
-            total_a = max(sum(action_counts), 1)
+            alpha      = loss_log[-1]['alpha']        if loss_log else 0
+            entropy    = loss_log[-1]['entropy']      if loss_log else 0
+            c1_loss    = loss_log[-1]['critic1_loss'] if loss_log else 0
+            actor_loss = loss_log[-1]['actor_loss']   if loss_log else 0
+            total_a    = max(sum(action_counts), 1)
             dist = '  '.join(f"{ACTION_NAMES[i]}:{action_counts[i]/total_a*100:.0f}%" for i in range(5))
+
             print(f"\n[Step {step:>6}] reward={avg_reward:+.4f}  α={alpha:.4f}  H={entropy:.4f}  episodes={len(episode_rewards)}")
             print(f"           actions → {dist}")
 
-        # Checkpoint
+            wandb_log(wb, {
+                'step':            step,
+                'reward/avg_10ep': avg_reward,
+                'train/entropy':   entropy,
+                'train/alpha':     alpha,
+                'train/critic_loss': c1_loss,
+                'train/actor_loss':  actor_loss,
+                'actions/hold':    action_counts[0] / total_a,
+                'actions/buy':     action_counts[1] / total_a,
+                'actions/adj_stop':action_counts[2] / total_a,
+                'actions/realize': action_counts[3] / total_a,
+                'actions/cancel':  action_counts[4] / total_a,
+                'episodes':        len(episode_rewards),
+            })
+
+        # Checkpoint + validation backtest
         if step % args.save_every == 0:
             ck_path = save_dir / f'nova_brain_step{step}.pt'
             agent.save(str(ck_path))
             s3_upload(str(ck_path), f'checkpoints/{args.symbol.lower()}/nova_brain_step{step}.pt')
 
-            # Quick backtest on test split
             print("[TRAIN] Running validation backtest...")
-            results = run_backtest(agent, test_ticks, verbose=True)
-            sortino = results['sortino_ratio']
+            results   = run_backtest(agent, test_ticks, verbose=True)
+            sortino   = results['sortino_ratio']
+            total_a   = max(sum(action_counts), 1)
+
+            wandb_log(wb, {
+                'step':              step,
+                'val/sortino':       sortino,
+                'val/total_return':  results['total_return_pct'],
+                'val/win_rate':      results['win_rate_pct'],
+                'val/total_trades':  results['total_trades'],
+                'val/avg_hold_bars': results['avg_hold_bars'],
+                'val/max_drawdown':  results['max_drawdown_pct'],
+                'val/final_value':   results['final_value'],
+            })
 
             total_trades = results.get('total_trades', 0)
             if sortino > best_sortino and total_trades > 0:
-                best_sortino = sortino
+                best_sortino       = sortino
                 agent.best_sortino = best_sortino
                 best_path = save_dir / 'nova_brain_best.pt'
                 agent.save(str(best_path))
                 s3_upload(str(best_path), f'checkpoints/{args.symbol.lower()}/nova_brain_best.pt')
                 print(f"[TRAIN] New best Sortino: {sortino:.4f} → saved to {best_path}")
+                wandb_log(wb, {'val/best_sortino': best_sortino, 'step': step})
 
     # Final backtest
     print("\n[TRAIN] === FINAL BACKTEST ===")
     final_results = run_backtest(agent, test_ticks, verbose=True)
 
+    wandb_log(wb, {
+        'step':                   args.steps,
+        'final/sortino':          final_results['sortino_ratio'],
+        'final/total_return':     final_results['total_return_pct'],
+        'final/win_rate':         final_results['win_rate_pct'],
+        'final/total_trades':     final_results['total_trades'],
+        'final/max_drawdown':     final_results['max_drawdown_pct'],
+    })
+
     # Save final
     final_path = save_dir / 'nova_brain_final.pt'
     agent.save(str(final_path))
     s3_upload(str(final_path), f'checkpoints/{args.symbol.lower()}/nova_brain_final.pt')
+
+    wandb_finish(wb)
     print("[TRAIN] Done.")
 
 

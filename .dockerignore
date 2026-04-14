@@ -1,0 +1,7 @@
+checkpoints/
+__pycache__/
+*.pyc
+*.pyo
+.git/
+*.log
+.env
