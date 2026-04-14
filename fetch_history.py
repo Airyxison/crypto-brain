@@ -22,7 +22,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-BINANCE_KLINES = 'https://api.binance.com/api/v3/klines'
+BINANCE_KLINES = 'https://api.binance.us/api/v3/klines'
 LIMIT          = 1000   # max candles per request (Binance cap)
 INTERVAL       = '1m'
 
