@@ -53,7 +53,8 @@ class SAC:
         if self.auto_alpha:
             self.log_alpha = torch.tensor(np.log(init_alpha), dtype=torch.float32,
                                           requires_grad=True, device=self.device)
-            self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=self.lr)
+            alpha_lr = cfg.get('alpha_lr', self.lr * 0.1)  # slower than actor/critic
+            self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=alpha_lr)
             self.alpha_value = self.log_alpha.exp().item()
         else:
             self.alpha_value = init_alpha

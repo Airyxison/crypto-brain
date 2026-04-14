@@ -113,8 +113,9 @@ class TradingEnv(gym.Env):
         step_realized  = self._ob.realized_pnl - prev_realized_pnl
         exit_was_stop  = self._ob.last_close_reason == 'stop_loss'
 
-        # Compute reward — scaled up so Q-network can differentiate
-        reward = self._compute_reward(prev_pv, event, step_realized, prev_bars_held, exit_was_stop) * 1000.0
+        # Reward unscaled — 1000x multiplier was causing Q-values in the thousands,
+        # which drove auto-alpha into the tens-of-thousands and drowned the Q signal.
+        reward = self._compute_reward(prev_pv, event, step_realized, prev_bars_held, exit_was_stop)
 
         # Check termination
         terminated = (
