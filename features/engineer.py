@@ -17,7 +17,7 @@ Features:
   [9]  time_in_position    — bars held, normalized (0-1 over max_hold window)
   [10] distance_to_stop    — (price - stop) / price, 0 if no position
   [11] trade_frequency     — ticks per minute normalized to recent avg
-  [12] price_vs_range      — (price - 4h_low) / (4h_high - 4h_low)
+  [12] momentum_30m        — 30-min return (fills gap between 15m and 1d)
   [13] momentum_1d         — 24h return (macro intraday trend)
   [14] momentum_7d         — 7-day return (weekly regime)
   [15] momentum_30d        — 30-day return (macro bull/bear regime)
@@ -162,7 +162,7 @@ class FeatureEngineer:
             float(time_in_pos),                                # [9]
             float(dist_to_stop),                               # [10]
             float(np.clip(trade_frequency, -3.0, 3.0)),        # [11]
-            float(np.clip(price_vs_range, 0.0, 1.0)),          # [12]
+            float(np.clip(_momentum(1800), -0.25, 0.25)),       # [12] 30-min momentum
             float(np.clip(momentum_1d,  -0.2, 0.2)),           # [13] 24h trend
             float(np.clip(momentum_7d,  -0.5, 0.5)),           # [14] weekly regime
             float(np.clip(momentum_30d, -1.0, 1.0)),           # [15] macro bull/bear

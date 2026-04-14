@@ -73,7 +73,7 @@ class OrderBookSimulator:
     MAX_STOP_PCT     = 0.05    # ceiling: 5% — never wider even in extreme volatility
     DEFAULT_STOP_PCT = 0.005   # fallback when volatility is unknown (features not warm)
 
-    DEFAULT_LIMIT_DISC  = 0.0
+    DEFAULT_LIMIT_DISC  = 0.002  # place limit 0.2% below market — avoids immediate fills, buys small dips
     FEE_RATE            = 0.001  # 0.1% per side (Coinbase taker fee)
 
     def __init__(self, initial_cash: float = 10_000.0):
