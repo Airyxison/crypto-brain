@@ -69,9 +69,9 @@ class OrderBookSimulator:
     # K=2.5 means the stop fires at ~2.5 standard deviations of adverse movement —
     # tight for calm assets (ADA ~0.25%), wide for volatile ones (SOL ~1.0%).
     STOP_K           = 2.5
-    MIN_STOP_PCT     = 0.005   # floor: 0.5% — never tighter even in the calmest market
+    MIN_STOP_PCT     = 0.01    # floor: 1% — 0.5% was too tight, stops firing within 10 bars on volatile assets
     MAX_STOP_PCT     = 0.05    # ceiling: 5% — never wider even in extreme volatility
-    DEFAULT_STOP_PCT = 0.005   # fallback when volatility is unknown (features not warm)
+    DEFAULT_STOP_PCT = 0.01    # fallback when volatility is unknown (features not warm)
 
     DEFAULT_LIMIT_DISC  = 0.002  # place limit 0.2% below market — avoids immediate fills, buys small dips
     FEE_RATE            = 0.001  # 0.1% per side (Coinbase taker fee)
@@ -86,6 +86,7 @@ class OrderBookSimulator:
         self.realized_pnl: float      = 0.0
         self.portfolio_peak: float    = initial_cash
         self.stop_triggered: bool     = False
+        self.last_close_reason: str   = ''   # 'stop_loss' | 'realized' | '' — cleared each tick
         self.trades: list             = []
 
     @property
@@ -101,6 +102,7 @@ class OrderBookSimulator:
         self._last_price = price
         self.current_bar += 1
         self.stop_triggered = False
+        self.last_close_reason = ''
         event = {'filled': False, 'stop_hit': False, 'expired': False}
 
         # 1. Check pending order fill
@@ -216,6 +218,7 @@ class OrderBookSimulator:
         pnl = net_proceeds - self.position.cost_basis
         self.realized_pnl += pnl
         self.cash += net_proceeds
+        self.last_close_reason = reason
         self.trades.append({
             'entry_price': self.position.entry_price,
             'exit_price': price,

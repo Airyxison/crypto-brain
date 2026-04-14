@@ -92,8 +92,11 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
 
-        action_counts[action] += 1
-        agent.store(obs, action, reward, next_obs, done)
+        # Store the shaped action (what the env actually executed), not the raw action.
+        # This ensures the SAC never gets credit for invalid-action no-ops.
+        action_taken = info.get('action_taken', action)
+        action_counts[action_taken] += 1
+        agent.store(obs, action_taken, reward, next_obs, done)
         losses = None
         for _ in range(4):  # 4 gradient updates per env step — keeps GPU busy
             result = agent.train_step()

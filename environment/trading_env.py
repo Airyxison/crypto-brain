@@ -31,12 +31,11 @@ REALIZE_GAIN  = 3
 CANCEL_ORDER  = 4
 
 # Reward hyperparameters
-ALPHA               = 0.5    # drawdown penalty weight
-BETA                = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
-GAMMA               = 0.0001 # losing hold cost per bar
-EPSILON             = 0.0001 # opportunity cost: penalty for holding cash while market moves
-MIN_HOLD_BARS       = 50     # minimum bars before a realized-gain bonus is awarded (was 20 — discourage scalping)
-INVALID_ACTION_COST = 0.0001 # penalty for no-op actions (REALIZE/CANCEL/ADJ_STOP with nothing to act on)
+ALPHA         = 0.5    # drawdown penalty weight
+BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
+GAMMA         = 0.0001 # losing hold cost per bar
+EPSILON       = 0.0001 # opportunity cost: penalty for holding cash while market moves
+MIN_HOLD_BARS = 50     # minimum bars before an agent-chosen exit earns a realized bonus
 
 
 class TradingEnv(gym.Env):
@@ -98,8 +97,11 @@ class TradingEnv(gym.Env):
         # Bars held before this action fires (used by _compute_reward for min-hold check)
         prev_bars_held    = (self._idx - self._ob.position.entry_bar) if self._ob.position else 0
 
-        # Execute action — returns True if the action had a valid target
-        action_valid = self._execute_action(action, price)
+        # Shape action: redirect invalid actions → HOLD so the agent can't exploit
+        # free-looping (e.g. spamming BUY when already in a position).
+        # The shaped action is what gets stored in the replay buffer.
+        shaped_action = self._shape_action(action)
+        self._execute_action(shaped_action, price)
 
         # Advance tick
         event = self._ob.tick(price)
@@ -108,10 +110,11 @@ class TradingEnv(gym.Env):
         self._step_count += 1
 
         # Realized PnL delta this step — positive only when a trade just closed
-        step_realized = self._ob.realized_pnl - prev_realized_pnl
+        step_realized  = self._ob.realized_pnl - prev_realized_pnl
+        exit_was_stop  = self._ob.last_close_reason == 'stop_loss'
 
         # Compute reward — scaled up so Q-network can differentiate
-        reward = self._compute_reward(prev_pv, event, step_realized, prev_bars_held, action_valid) * 1000.0
+        reward = self._compute_reward(prev_pv, event, step_realized, prev_bars_held, exit_was_stop) * 1000.0
 
         # Check termination
         terminated = (
@@ -127,27 +130,45 @@ class TradingEnv(gym.Env):
             'realized_pnl':    self._ob.realized_pnl,
             'in_position':     self._ob.position is not None,
             'stop_triggered':  event.get('stop_hit', False),
+            'action_taken':    shaped_action,   # actual action executed (may differ from requested)
         }
 
         return obs, reward, terminated, truncated, info
 
     # -------------------------------------------------------------------------
 
-    def _execute_action(self, action: int, price: float) -> bool:
-        """Execute action. Returns True if the action had a valid target, False if it was a no-op."""
+    def _shape_action(self, action: int) -> int:
+        """Redirect invalid actions to HOLD before execution.
+
+        Prevents action-exploitation loops (e.g. spamming BUY into an already-open
+        position, or REALIZE with nothing to close). The shaped action is stored in
+        the replay buffer so the SAC never associates invalid actions with their
+        unintended side-effects.
+        """
+        if action == BUY_LIMIT and (self._ob.pending_order or self._ob.position):
+            return HOLD
+        if action == ADJUST_STOP and not self._ob.position:
+            return HOLD
+        if action == REALIZE_GAIN and not self._ob.position:
+            return HOLD
+        if action == CANCEL_ORDER and not self._ob.pending_order:
+            return HOLD
+        return action
+
+    def _execute_action(self, action: int, price: float):
+        """Execute a (pre-shaped) action."""
         if action == BUY_LIMIT:
             vol = self._features.current_volatility if self._features.ready else 0.0
-            return self._ob.place_buy_limit(price, volatility=vol)
+            self._ob.place_buy_limit(price, volatility=vol)
         elif action == ADJUST_STOP:
-            return self._ob.adjust_stop(price)
+            self._ob.adjust_stop(price)
         elif action == REALIZE_GAIN:
-            return self._ob.realize_gain(price)
+            self._ob.realize_gain(price)
         elif action == CANCEL_ORDER:
-            return self._ob.cancel_order()
-        # HOLD: always valid
-        return True
+            self._ob.cancel_order()
+        # HOLD: no-op
 
-    def _compute_reward(self, prev_pv: float, event: dict, step_realized: float = 0.0, bars_held: int = 0, action_valid: bool = True) -> float:
+    def _compute_reward(self, prev_pv: float, event: dict, step_realized: float = 0.0, bars_held: int = 0, exit_was_stop: bool = False) -> float:
         current_pv = self._ob.portfolio_value
 
         # Base return (signed, fractional)
@@ -178,21 +199,20 @@ class TradingEnv(gym.Env):
             if price_move > 0:
                 opp_cost = -EPSILON * price_move
 
-        # Realized gain bonus — explicit credit assignment when a trade closes.
-        # Requires MIN_HOLD_BARS held before awarding any bonus; premature exits
-        # get a small penalty to discourage scalping sub-penny moves after fees.
+        # Realized gain/loss bonus — explicit credit assignment when a trade closes.
+        # Stop-triggered exits: just the raw PnL (agent didn't choose the timing).
+        # Agent-chosen exits: bonus only if held long enough; premature penalty otherwise.
         realized_bonus = 0.0
         if step_realized != 0.0:
             pct = step_realized / (prev_pv + 1e-9)
-            if bars_held >= MIN_HOLD_BARS:
-                realized_bonus = pct  # 1:1, no amplifier — fees do the heavy lifting
+            if exit_was_stop:
+                realized_bonus = pct          # stop exit: raw PnL only, no extra penalty
+            elif bars_held >= MIN_HOLD_BARS:
+                realized_bonus = pct          # agent exit after sufficient hold: full credit
             else:
-                realized_bonus = -abs(pct) * 0.5  # premature exit penalty
+                realized_bonus = -abs(pct) * 0.5  # agent premature exit: discourage scalping
 
-        # Penalty for no-op actions — discourages calling REALIZE/CANCEL/ADJUST with nothing to act on
-        invalid_penalty = 0.0 if action_valid else -INVALID_ACTION_COST
-
-        return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus + invalid_penalty)
+        return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus)
 
     def _get_obs(self) -> np.ndarray:
         pos = self._ob.position
