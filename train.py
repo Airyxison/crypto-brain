@@ -2,7 +2,7 @@
 Training Script — Nova Brain POC
 ---------------------------------
 Usage:
-  python train.py --db ../crypto-engine/ticks.db --steps 50000
+  python train.py --db /root/crypto-engine/ticks.db --steps 50000
 
 The script:
   1. Loads tick data from SQLite (written by the Rust engine)
@@ -36,7 +36,7 @@ def s3_upload(local_path: str, s3_key: str, bucket: str = 'nova-trader-data-2498
 
 def parse_args():
     p = argparse.ArgumentParser(description='Train Nova Brain SAC agent')
-    p.add_argument('--db',       default='../crypto-engine/ticks.db', help='Path to SQLite tick DB')
+    p.add_argument('--db',       default='/root/crypto-engine/ticks.db', help='Path to SQLite tick DB')
     p.add_argument('--steps',    type=int, default=200_000, help='Total training steps')
     p.add_argument('--save-dir', default='checkpoints',     help='Checkpoint directory')
     p.add_argument('--save-every', type=int, default=10_000, help='Save checkpoint every N steps')
