@@ -25,7 +25,7 @@ SAVE_EVERY=10000
 
 echo "=== Launching v9 training ==="
 
-nohup python3 /root/crypto-brain/train.py \
+nohup python3 -u /root/crypto-brain/train.py \
     --symbol BTCUSDT \
     --db $DB \
     --steps $STEPS \
@@ -35,7 +35,7 @@ nohup python3 /root/crypto-brain/train.py \
     > /root/crypto-brain/logs/btc_v9.log 2>&1 &
 echo "BTC pid=$!"
 
-nohup python3 /root/crypto-brain/train.py \
+nohup python3 -u /root/crypto-brain/train.py \
     --symbol ETHUSDT \
     --db $DB \
     --steps $STEPS \
@@ -45,7 +45,7 @@ nohup python3 /root/crypto-brain/train.py \
     > /root/crypto-brain/logs/eth_v9.log 2>&1 &
 echo "ETH pid=$!"
 
-nohup python3 /root/crypto-brain/train.py \
+nohup python3 -u /root/crypto-brain/train.py \
     --symbol SOLUSDT \
     --db $DB \
     --steps $STEPS \
@@ -55,7 +55,7 @@ nohup python3 /root/crypto-brain/train.py \
     > /root/crypto-brain/logs/sol_v9.log 2>&1 &
 echo "SOL pid=$!"
 
-nohup python3 /root/crypto-brain/train.py \
+nohup python3 -u /root/crypto-brain/train.py \
     --symbol ADAUSDT \
     --db $DB \
     --steps $STEPS \
