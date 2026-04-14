@@ -40,12 +40,25 @@ class SAC:
         self.buffer_size  = cfg.get('buffer_size',   200_000)
         self.warmup_steps = cfg.get('warmup_steps',  1_000)
 
-        # Fixed temperature for POC — auto-tuning added back once loop is stable
-        # 0.1 pushes the policy to exploit Q-values more strongly; was 0.2 but
-        # entropy barely moved after 50k steps so the exploration bonus was too dominant
-        self.alpha_value = cfg.get('alpha', 0.1)
-        self.log_alpha   = None  # not used in fixed mode
-        self.target_entropy = None
+        # Auto-tuning temperature (Haarnoja et al. 2018).
+        # Target entropy = 0.98 * log(n_actions) keeps the policy from collapsing to
+        # near-deterministic HOLD — the failure mode seen in v8 with fixed alpha=0.03.
+        # An initial alpha is still accepted for warm-starting; if auto_alpha=False
+        # the old fixed-temperature mode is restored (useful for ablations).
+        n_actions = 5
+        self.auto_alpha = cfg.get('auto_alpha', True)
+        self.target_entropy = -np.log(1.0 / n_actions) * cfg.get('entropy_factor', 0.98)
+        init_alpha = cfg.get('alpha', 0.1)
+
+        if self.auto_alpha:
+            self.log_alpha = torch.tensor(np.log(init_alpha), dtype=torch.float32,
+                                          requires_grad=True, device=self.device)
+            self.alpha_opt = torch.optim.Adam([self.log_alpha], lr=self.lr)
+            self.alpha_value = self.log_alpha.exp().item()
+        else:
+            self.alpha_value = init_alpha
+            self.log_alpha   = None
+            self.alpha_opt   = None
 
         # Networks
         self.actor    = Actor().to(self.device)
@@ -71,6 +84,8 @@ class SAC:
 
     @property
     def alpha(self) -> float:
+        if self.auto_alpha:
+            self.alpha_value = self.log_alpha.exp().item()
         return self.alpha_value
 
     def select_action(self, state: np.ndarray, deterministic: bool = False) -> int:
@@ -127,6 +142,15 @@ class SAC:
 
         entropy = -(probs * log_probs).sum(dim=1).mean()
 
+        # ---- Alpha (temperature) update ----
+        # Adjusts alpha so the policy maintains target_entropy.
+        # If entropy < target: alpha rises (more exploration); if entropy > target: alpha falls.
+        alpha_loss = None
+        if self.auto_alpha:
+            alpha_loss = -(self.log_alpha * (entropy - self.target_entropy).detach()).mean()
+            self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
+            self.alpha_value = self.log_alpha.exp().item()
+
         # ---- Soft update target networks ----
         self._soft_update(self.critic1, self.target1)
         self._soft_update(self.critic2, self.target2)
@@ -135,8 +159,10 @@ class SAC:
             'critic1_loss': critic1_loss.item(),
             'critic2_loss': critic2_loss.item(),
             'actor_loss':   actor_loss.item(),
+            'alpha_loss':   alpha_loss.item() if alpha_loss is not None else 0.0,
             'alpha':        self.alpha,
             'entropy':      entropy.item(),
+            'target_entropy': self.target_entropy,
         }
 
     def _soft_update(self, source: nn.Module, target: nn.Module):
@@ -144,14 +170,17 @@ class SAC:
             t_param.data.copy_(self.tau * s_param.data + (1.0 - self.tau) * t_param.data)
 
     def save(self, path: str):
-        torch.save({
+        payload = {
             'actor':        self.actor.state_dict(),
             'critic1':      self.critic1.state_dict(),
             'critic2':      self.critic2.state_dict(),
             'alpha_value':  self.alpha_value,
             'steps':        self.steps,
             'best_sortino': self.best_sortino,
-        }, path)
+        }
+        if self.auto_alpha and self.log_alpha is not None:
+            payload['log_alpha'] = self.log_alpha.data
+        torch.save(payload, path)
         print(f"[SAC] Saved checkpoint → {path}")
 
     def load(self, path: str):
@@ -161,8 +190,11 @@ class SAC:
         self.critic2.load_state_dict(ck['critic2'])
         self.target1.load_state_dict(ck['critic1'])
         self.target2.load_state_dict(ck['critic2'])
-        # alpha is a hyperparameter — do not restore from checkpoint so
-        # the caller can change it between runs without being overridden.
+        # Restore log_alpha only in auto_alpha mode — keeps alpha warm across restarts.
+        # In fixed mode alpha is intentionally not restored (caller controls it).
+        if self.auto_alpha and 'log_alpha' in ck:
+            self.log_alpha.data = ck['log_alpha'].to(self.device)
+            self.alpha_value = self.log_alpha.exp().item()
         self.steps = ck.get('steps', 0)
         self.best_sortino = ck.get('best_sortino', -np.inf)
-        print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps}, best_sortino {self.best_sortino:.4f})")
+        print(f"[SAC] Loaded checkpoint ← {path} (step {self.steps}, alpha {self.alpha_value:.4f}, best_sortino {self.best_sortino:.4f})")

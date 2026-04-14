@@ -48,14 +48,17 @@ def wandb_init(args, agent):
         return None
     try:
         import wandb
+        auto_tag = "auto" if not args.no_auto_alpha else f"fixed{args.alpha}"
         run = wandb.init(
             project='nova-brain',
-            name=f"{args.symbol}-v{args.steps//1000}k-a{args.alpha}",
+            name=f"{args.symbol}-v{args.steps//1000}k-{auto_tag}",
             config={
-                'symbol':    args.symbol,
-                'steps':     args.steps,
-                'alpha':     args.alpha,
-                'save_every': args.save_every,
+                'symbol':        args.symbol,
+                'steps':         args.steps,
+                'alpha_init':    args.alpha,
+                'auto_alpha':    not args.no_auto_alpha,
+                'episode_steps': args.episode_steps,
+                'save_every':    args.save_every,
             },
             reinit=True,
         )
@@ -113,7 +116,9 @@ def parse_args():
     p.add_argument('--save-every', type=int, default=10_000,  help='Save checkpoint every N steps')
     p.add_argument('--symbol',     default='BTCUSDT',         help='Asset symbol')
     p.add_argument('--resume',     default=None,              help='Resume from checkpoint path')
-    p.add_argument('--alpha',      type=float, default=None,  help='Override temperature alpha (e.g. 0.1)')
+    p.add_argument('--alpha',         type=float, default=None,  help='Initial alpha / fixed alpha if --no-auto-alpha')
+    p.add_argument('--no-auto-alpha', action='store_true',        help='Disable auto-alpha tuning (fixed temperature)')
+    p.add_argument('--episode-steps', type=int,   default=1000,  help='Max steps per training episode (default 1000)')
     return p.parse_args()
 
 
@@ -141,18 +146,21 @@ def main():
     print(f"[TRAIN] {len(train_ticks)} train ticks | {len(test_ticks)} test ticks")
 
     # Initialize agent
-    agent = SAC()
+    sac_cfg = {}
+    if args.alpha is not None:
+        sac_cfg['alpha'] = args.alpha
+    if args.no_auto_alpha:
+        sac_cfg['auto_alpha'] = False
+    agent = SAC(config=sac_cfg)
     if args.resume:
         agent.load(args.resume)
-    if args.alpha is not None:
-        agent.alpha_value = args.alpha
-        print(f"[TRAIN] Alpha overridden → {args.alpha}")
+    print(f"[TRAIN] Auto-alpha: {'ON (target_entropy={:.3f})'.format(agent.target_entropy) if agent.auto_alpha else 'OFF'}")
 
     # W&B run — no-op if WANDB_API_KEY not set
     wb = wandb_init(args, agent)
 
     # Training environment (resets randomly within train split)
-    env = TradingEnv(train_ticks)
+    env = TradingEnv(train_ticks, {'max_episode_steps': args.episode_steps})
     obs, _ = env.reset()
 
     # Metrics tracking
@@ -198,27 +206,31 @@ def main():
             avg_reward = np.mean(recent_rewards)
             alpha      = loss_log[-1]['alpha']        if loss_log else 0
             entropy    = loss_log[-1]['entropy']      if loss_log else 0
+            tgt_ent    = loss_log[-1].get('target_entropy', 0) if loss_log else 0
             c1_loss    = loss_log[-1]['critic1_loss'] if loss_log else 0
             actor_loss = loss_log[-1]['actor_loss']   if loss_log else 0
+            alpha_loss = loss_log[-1].get('alpha_loss', 0) if loss_log else 0
             total_a    = max(sum(action_counts), 1)
             dist = '  '.join(f"{ACTION_NAMES[i]}:{action_counts[i]/total_a*100:.0f}%" for i in range(5))
 
-            print(f"\n[Step {step:>6}] reward={avg_reward:+.4f}  α={alpha:.4f}  H={entropy:.4f}  episodes={len(episode_rewards)}")
+            print(f"\n[Step {step:>6}] reward={avg_reward:+.4f}  α={alpha:.4f}  H={entropy:.4f}  H_tgt={tgt_ent:.4f}  episodes={len(episode_rewards)}")
             print(f"           actions → {dist}")
 
             wandb_log(wb, {
-                'step':            step,
-                'reward/avg_10ep': avg_reward,
-                'train/entropy':   entropy,
-                'train/alpha':     alpha,
-                'train/critic_loss': c1_loss,
-                'train/actor_loss':  actor_loss,
-                'actions/hold':    action_counts[0] / total_a,
-                'actions/buy':     action_counts[1] / total_a,
-                'actions/adj_stop':action_counts[2] / total_a,
-                'actions/realize': action_counts[3] / total_a,
-                'actions/cancel':  action_counts[4] / total_a,
-                'episodes':        len(episode_rewards),
+                'step':               step,
+                'reward/avg_10ep':    avg_reward,
+                'train/entropy':      entropy,
+                'train/entropy_target': tgt_ent,
+                'train/alpha':        alpha,
+                'train/alpha_loss':   alpha_loss,
+                'train/critic_loss':  c1_loss,
+                'train/actor_loss':   actor_loss,
+                'actions/hold':       action_counts[0] / total_a,
+                'actions/buy':        action_counts[1] / total_a,
+                'actions/adj_stop':   action_counts[2] / total_a,
+                'actions/realize':    action_counts[3] / total_a,
+                'actions/cancel':     action_counts[4] / total_a,
+                'episodes':           len(episode_rewards),
             })
 
         # Checkpoint + validation backtest
