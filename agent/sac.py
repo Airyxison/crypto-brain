@@ -147,7 +147,7 @@ class SAC:
         # If entropy < target: alpha rises (more exploration); if entropy > target: alpha falls.
         alpha_loss = None
         if self.auto_alpha:
-            alpha_loss = -(self.log_alpha * (entropy - self.target_entropy).detach()).mean()
+            alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
             self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
             self.alpha_value = self.log_alpha.exp().item()
 
