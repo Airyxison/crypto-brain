@@ -150,6 +150,10 @@ class SAC:
         if self.auto_alpha:
             alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
             self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
+            # Clamp log_alpha to prevent runaway alpha explosion (v9 lesson: alpha hit 2.67M).
+            # min=-5.0 → alpha≥0.007 (never fully remove entropy bonus)
+            # max=2.0  → alpha≤7.4  (Q-signal always visible to the actor)
+            self.log_alpha.data.clamp_(min=-5.0, max=2.0)
             self.alpha_value = self.log_alpha.exp().item()
 
         # ---- Soft update target networks ----
