@@ -94,6 +94,23 @@ class SAC:
             return np.random.randint(0, 5)
         return self.actor.act(state, deterministic=deterministic)
 
+    def select_action_batch(self, states: np.ndarray, deterministic: bool = False) -> np.ndarray:
+        """
+        Select actions for a batch of observations (vectorized env support).
+        states: np.ndarray of shape (N, STATE_DIM)
+        returns: np.ndarray of shape (N,) dtype int
+        """
+        if self.steps < self.warmup_steps:
+            return np.random.randint(0, 5, size=len(states))
+        state_t = torch.FloatTensor(states).to(self.device)  # (N, STATE_DIM)
+        with torch.no_grad():
+            probs, _ = self.actor(state_t)                   # (N, n_actions)
+            if deterministic:
+                actions = probs.argmax(dim=1)
+            else:
+                actions = torch.multinomial(probs, num_samples=1).squeeze(1)
+        return actions.cpu().numpy()
+
     def store(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
 

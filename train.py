@@ -119,6 +119,7 @@ def parse_args():
     p.add_argument('--alpha',         type=float, default=None,  help='Initial alpha / fixed alpha if --no-auto-alpha')
     p.add_argument('--no-auto-alpha', action='store_true',        help='Disable auto-alpha tuning (fixed temperature)')
     p.add_argument('--episode-steps', type=int,   default=1000,  help='Max steps per training episode (default 1000)')
+    p.add_argument('--num-envs',      type=int,   default=1,     help='Number of parallel envs per symbol (vectorized training, v11+). Default 1 = serial loop.')
     return p.parse_args()
 
 
@@ -159,46 +160,85 @@ def main():
     # W&B run — no-op if WANDB_API_KEY not set
     wb = wandb_init(args, agent)
 
-    # Training environment (resets randomly within train split)
-    env = TradingEnv(train_ticks, {'max_episode_steps': args.episode_steps})
-    obs, _ = env.reset()
+    # Training environment setup — serial (default) or vectorized (--num-envs N)
+    if args.num_envs > 1:
+        from gymnasium.vector import SyncVectorEnv
+        ep_steps = args.episode_steps
+        vec_env = SyncVectorEnv([
+            (lambda: TradingEnv(train_ticks, {'max_episode_steps': ep_steps}))
+            for _ in range(args.num_envs)
+        ])
+        obs_batch, _ = vec_env.reset()
+        ep_rewards_vec = np.zeros(args.num_envs)
+        grad_updates   = 2   # 2 updates/step: N envs push N transitions each step,
+                             # keeping the experience/gradient ratio balanced (Nova v11 spec)
+        print(f"[TRAIN] Vectorized mode: {args.num_envs} envs  |  {grad_updates} grad updates/step")
+    else:
+        env = TradingEnv(train_ticks, {'max_episode_steps': args.episode_steps})
+        obs, _ = env.reset()
+        episode_reward = 0.0
+        grad_updates   = 4   # 4 updates/step in serial mode (unchanged from v10)
 
-    # Metrics tracking
+    # Metrics tracking (shared by both modes)
     episode_rewards = []
-    episode_reward  = 0.0
     best_sortino    = agent.best_sortino
     print(f"[TRAIN] best_sortino initialized to {best_sortino:.4f}")
-    loss_log     = []
-    ACTION_NAMES = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
+    loss_log      = []
+    ACTION_NAMES  = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
     action_counts = [0] * len(ACTION_NAMES)
 
     print(f"[TRAIN] Starting training for {args.steps} steps...")
     for step in tqdm(range(1, args.steps + 1), ncols=80):
-        action = agent.select_action(obs)
-        next_obs, reward, terminated, truncated, info = env.step(action)
-        done = terminated or truncated
 
-        # Store the shaped action (what the env actually executed), not the raw action.
-        # This ensures the SAC never gets credit for invalid-action no-ops.
-        action_taken = info.get('action_taken', action)
-        action_counts[action_taken] += 1
-        agent.store(obs, action_taken, reward, next_obs, done)
+        if args.num_envs > 1:
+            # ---- Vectorized step ------------------------------------------------
+            # gymnasium 1.2.3: infos is a dict of arrays, e.g.
+            #   infos['action_taken'] -> np.ndarray of shape (num_envs,)
+            actions = agent.select_action_batch(obs_batch)
+            next_obs_batch, rewards, terminated, truncated, infos = vec_env.step(actions)
+            dones = terminated | truncated
 
+            action_taken_arr = np.asarray(infos.get('action_taken', actions))
+            for i in range(args.num_envs):
+                at = int(action_taken_arr[i])
+                action_counts[at] += 1
+                agent.store(obs_batch[i], at, float(rewards[i]), next_obs_batch[i], bool(dones[i]))
+
+            ep_rewards_vec += rewards
+            for i in np.where(dones)[0]:
+                episode_rewards.append(float(ep_rewards_vec[i]))
+                ep_rewards_vec[i] = 0.0
+
+            obs_batch = next_obs_batch
+
+        else:
+            # ---- Serial step (unchanged from v10) --------------------------------
+            action = agent.select_action(obs)
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+
+            # Store the shaped action (what the env actually executed), not the raw action.
+            # This ensures the SAC never gets credit for invalid-action no-ops.
+            action_taken = info.get('action_taken', action)
+            action_counts[action_taken] += 1
+            agent.store(obs, action_taken, reward, next_obs, done)
+
+            episode_reward += reward
+            obs = next_obs
+
+            if done:
+                episode_rewards.append(episode_reward)
+                episode_reward = 0.0
+                obs, _ = env.reset()
+
+        # Gradient updates (4 for serial, 2 for vectorized — shared)
         losses = None
-        for _ in range(4):  # 4 gradient updates per env step — keeps GPU busy
+        for _ in range(grad_updates):
             result = agent.train_step()
             if result:
                 losses = result
         if losses:
             loss_log.append(losses)
-
-        episode_reward += reward
-        obs = next_obs
-
-        if done:
-            episode_rewards.append(episode_reward)
-            episode_reward = 0.0
-            obs, _ = env.reset()
 
         # Periodic logging — every 1k steps
         if step % 1000 == 0:
