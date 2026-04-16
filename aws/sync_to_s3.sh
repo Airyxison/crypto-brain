@@ -15,7 +15,14 @@ fi
 
 SIZE=$(du -sh "$DB_PATH" | cut -f1)
 echo "Uploading ticks.db ($SIZE) → s3://$S3_BUCKET/ticks/ticks.db"
-aws s3 cp "$DB_PATH" "s3://$S3_BUCKET/ticks/ticks.db" \
-    --region "$AWS_REGION"
 
-echo "Done. Tick data available for EC2 training instances."
+python3 - <<PYEOF
+import boto3, os, sys
+s3 = boto3.client('s3', region_name='${AWS_REGION}')
+path   = '${DB_PATH}'
+bucket = '${S3_BUCKET}'
+size   = os.path.getsize(path)
+print(f'  Size: {size/1e6:.0f} MB')
+s3.upload_file(path, bucket, 'ticks/ticks.db')
+print('Done. Tick data available for EC2 training instances.')
+PYEOF

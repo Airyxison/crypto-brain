@@ -2,7 +2,7 @@
 
 **Status:** Ready for implementation  
 **Priority:** P0 — Blocks all future training runs  
-**Author:** Nova  
+**Author:** Kiran  
 **Date:** 2026-04-10
 
 ---

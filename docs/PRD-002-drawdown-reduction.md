@@ -2,7 +2,7 @@
 
 **Status:** Ready — pending PRD-001 completion  
 **Priority:** P1 — Required before live capital deployment  
-**Author:** Nova  
+**Author:** Kiran  
 **Date:** 2026-04-10
 
 ---

@@ -33,8 +33,8 @@ CANCEL_ORDER  = 4
 # Reward hyperparameters
 ALPHA         = 0.5    # drawdown penalty weight
 BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
-GAMMA         = 0.0001 # losing hold cost per bar
-EPSILON       = 0.0001 # opportunity cost: penalty for holding cash while market moves
+GAMMA         = 0.00001 # losing hold cost per bar (v10: reduced 10x — at 0.0001, 300-bar drag ~0.03 exceeded typical +0.02 win, inadvertently punishing position-holding)
+EPSILON       = 0.00001 # opportunity cost: penalty for holding cash while market moves (v10: reduced 10x — same magnitude fix)
 MIN_HOLD_BARS = 50     # minimum bars before an agent-chosen exit earns a realized bonus
 
 
@@ -211,7 +211,13 @@ class TradingEnv(gym.Env):
             elif bars_held >= MIN_HOLD_BARS:
                 realized_bonus = pct          # agent exit after sufficient hold: full credit
             else:
-                realized_bonus = -abs(pct) * 0.5  # agent premature exit: discourage scalping
+                # Premature exit: only penalize profitable scalps (discourage micro-scalping).
+                # Cutting a losing trade early is risk management, not scalping — don't
+                # double-punish it on top of the raw loss (v9 lesson: crossfire paralysis).
+                if pct > 0:
+                    realized_bonus = -abs(pct) * 0.5  # premature profit: 50% penalty
+                else:
+                    realized_bonus = pct               # premature loss exit: raw PnL only
 
         return float(base - drawdown_penalty + stop_penalty + hold_cost + opp_cost + realized_bonus)
 

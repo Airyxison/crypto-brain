@@ -2,7 +2,7 @@
 
 **Status:** Future — requires PRD-001, PRD-002, and PRD-003 first  
 **Priority:** P2 — Final milestone before real capital deployment  
-**Author:** Nova  
+**Author:** Kiran  
 **Date:** 2026-04-10
 
 ---

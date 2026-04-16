@@ -22,7 +22,7 @@ from environment.trading_env import TradingEnv
 from agent.sac import SAC
 
 
-def load_ticks_from_db(db_path: str, symbol: str = 'BTCUSDT', limit: int = 500_000) -> list[dict]:
+def load_ticks_from_db(db_path: str, symbol: str = 'BTCUSDT', limit: int = 2_000_000) -> list[dict]:
     """Load historical ticks from the Rust engine's SQLite database."""
     conn = sqlite3.connect(db_path)
     cur  = conn.cursor()

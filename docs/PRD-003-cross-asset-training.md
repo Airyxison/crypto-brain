@@ -2,7 +2,7 @@
 
 **Status:** ETH/SOL training in progress; ADA backfill in progress  
 **Priority:** P1 — After PRD-001 and PRD-002  
-**Author:** Nova  
+**Author:** Kiran  
 **Date:** 2026-04-10
 
 ---

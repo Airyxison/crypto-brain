@@ -2,7 +2,7 @@
 
 **Status:** Future — requires PRD-003 (per-asset policies) as foundation  
 **Priority:** P2 — Long-term vision, begin design now  
-**Author:** Nova  
+**Author:** Kiran  
 **Date:** 2026-04-10
 
 ---
