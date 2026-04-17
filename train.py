@@ -162,9 +162,9 @@ def main():
 
     # Training environment setup — serial (default) or vectorized (--num-envs N)
     if args.num_envs > 1:
-        from gymnasium.vector import SyncVectorEnv
+        from gymnasium.vector import AsyncVectorEnv
         ep_steps = args.episode_steps
-        vec_env = SyncVectorEnv([
+        vec_env = AsyncVectorEnv([
             (lambda: TradingEnv(train_ticks, {'max_episode_steps': ep_steps}))
             for _ in range(args.num_envs)
         ])
