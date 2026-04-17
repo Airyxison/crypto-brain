@@ -199,10 +199,9 @@ def main():
             dones = terminated | truncated
 
             action_taken_arr = np.asarray(infos.get('action_taken', actions))
-            for i in range(args.num_envs):
-                at = int(action_taken_arr[i])
-                action_counts[at] += 1
-                agent.store(obs_batch[i], at, float(rewards[i]), next_obs_batch[i], bool(dones[i]))
+            # Batch insert — one numpy op instead of N Python iterations
+            np.add.at(action_counts, action_taken_arr, 1)
+            agent.store_batch(obs_batch, action_taken_arr, rewards, next_obs_batch, dones)
 
             ep_rewards_vec += rewards
             for i in np.where(dones)[0]:

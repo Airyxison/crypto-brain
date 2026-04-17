@@ -40,6 +40,25 @@ class ReplayBuffer:
         self.ptr  = (self.ptr + 1) % self.capacity
         self.size = min(self.size + 1, self.capacity)
 
+    def push_batch(
+        self,
+        states:      np.ndarray,
+        actions:     np.ndarray,
+        rewards:     np.ndarray,
+        next_states: np.ndarray,
+        dones:       np.ndarray,
+    ):
+        """Insert a batch of N transitions in one numpy op (no Python loop)."""
+        N    = len(states)
+        idxs = np.arange(self.ptr, self.ptr + N) % self.capacity
+        self.states[idxs]      = states
+        self.actions[idxs]     = actions
+        self.rewards[idxs]     = rewards
+        self.next_states[idxs] = next_states
+        self.dones[idxs]       = dones.astype(np.float32)
+        self.ptr  = (self.ptr + N) % self.capacity
+        self.size = min(self.size + N, self.capacity)
+
     def sample(self, batch_size: int, device: torch.device) -> dict[str, torch.Tensor]:
         idx = np.random.randint(0, self.size, size=batch_size)
         return {

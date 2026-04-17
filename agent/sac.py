@@ -114,6 +114,17 @@ class SAC:
     def store(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
 
+    def store_batch(
+        self,
+        states:      np.ndarray,
+        actions:     np.ndarray,
+        rewards:     np.ndarray,
+        next_states: np.ndarray,
+        dones:       np.ndarray,
+    ):
+        """Store a batch of N transitions in one numpy op (vectorized env support)."""
+        self.buffer.push_batch(states, actions, rewards, next_states, dones)
+
     def train_step(self) -> dict[str, float] | None:
         if len(self.buffer) < self.batch_size:
             return None
