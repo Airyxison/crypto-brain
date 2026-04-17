@@ -191,7 +191,7 @@ def main():
     print(f"[TRAIN] best_sortino initialized to {best_sortino:.4f}")
     loss_log      = []
     ACTION_NAMES  = ['HOLD', 'BUY', 'ADJ_STOP', 'REALIZE', 'CANCEL']
-    action_counts = [0] * len(ACTION_NAMES)
+    action_counts = np.zeros(len(ACTION_NAMES), dtype=np.int64)
 
     print(f"[TRAIN] Starting training for {args.steps} steps...")
     for step in tqdm(range(1, args.steps + 1), ncols=80):
