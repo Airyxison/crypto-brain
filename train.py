@@ -120,6 +120,7 @@ def parse_args():
     p.add_argument('--no-auto-alpha', action='store_true',        help='Disable auto-alpha tuning (fixed temperature)')
     p.add_argument('--episode-steps', type=int,   default=1000,  help='Max steps per training episode (default 1000)')
     p.add_argument('--num-envs',      type=int,   default=1,     help='Number of parallel envs per symbol (vectorized training, v11+). Default 1 = serial loop.')
+    p.add_argument('--buffer-size',   type=int,   default=None,  help='Replay buffer capacity. Defaults to 200k (serial) or 200k×num_envs (vectorized).')
     return p.parse_args()
 
 
@@ -152,6 +153,11 @@ def main():
         sac_cfg['alpha'] = args.alpha
     if args.no_auto_alpha:
         sac_cfg['auto_alpha'] = False
+    # Scale buffer with num_envs to preserve experience diversity window.
+    # Default: 200k serial, or 200k × num_envs vectorized (e.g. 3.2M for 16 envs).
+    buf_size = args.buffer_size or (200_000 * max(args.num_envs, 1))
+    sac_cfg['buffer_size'] = buf_size
+    print(f"[TRAIN] Replay buffer: {buf_size:,} transitions")
     agent = SAC(config=sac_cfg)
     if args.resume:
         agent.load(args.resume)
