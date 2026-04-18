@@ -83,6 +83,13 @@ class SAC:
         self.steps = 0
         self.best_sortino = -np.inf
 
+        # Piecewise entropy decay (v12): after exploit_start_step, stop auto-tuning
+        # and linearly decay log_alpha to exploit_floor. Captures log_alpha at the
+        # transition point so resume-from-checkpoint works correctly.
+        self.exploit_start_step  = cfg.get('exploit_start_step', None)   # None = disabled
+        self.exploit_floor       = cfg.get('exploit_floor', -3.0)         # alpha ≈ 0.05
+        self._log_alpha_at_transition = None
+
     @property
     def alpha(self) -> float:
         if self.auto_alpha:
@@ -172,16 +179,36 @@ class SAC:
         entropy = -(probs * log_probs).sum(dim=1).mean()
 
         # ---- Alpha (temperature) update ----
-        # Adjusts alpha so the policy maintains target_entropy.
-        # If entropy < target: alpha rises (more exploration); if entropy > target: alpha falls.
+        # Phase 1 (steps < exploit_start_step): auto-tune alpha toward target_entropy.
+        # Phase 2 (steps >= exploit_start_step): freeze auto-tuner, linearly decay
+        #   log_alpha to exploit_floor so the agent exploits its learned policy.
         alpha_loss = None
         if self.auto_alpha:
-            alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
-            self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
-            # Clamp log_alpha to prevent runaway alpha explosion (v9 lesson: alpha hit 2.67M).
-            # min=-5.0 → alpha≥0.007 (never fully remove entropy bonus)
-            # max=2.0  → alpha≤7.4  (Q-signal always visible to the actor)
-            self.log_alpha.data.clamp_(min=-5.0, max=2.0)
+            in_exploit_phase = (
+                self.exploit_start_step is not None
+                and self.steps >= self.exploit_start_step
+            )
+            if in_exploit_phase:
+                # Capture transition value once
+                if self._log_alpha_at_transition is None:
+                    self._log_alpha_at_transition = self.log_alpha.data.item()
+                # Linear decay from transition value → exploit_floor over remaining steps
+                # steps beyond transition (unbounded — decays to floor then stays)
+                steps_past = self.steps - self.exploit_start_step
+                decay_per_step = (self.exploit_floor - self._log_alpha_at_transition) / max(self.exploit_start_step, 1)
+                new_log_alpha = max(
+                    self._log_alpha_at_transition + decay_per_step * steps_past,
+                    self.exploit_floor
+                )
+                self.log_alpha.data.fill_(new_log_alpha)
+                # alpha_loss stays None — optimizer not called in exploit phase
+            else:
+                alpha_loss = (self.log_alpha * (entropy - self.target_entropy).detach()).mean()
+                self.alpha_opt.zero_grad(); alpha_loss.backward(); self.alpha_opt.step()
+                # Clamp log_alpha to prevent runaway alpha explosion (v9 lesson: alpha hit 2.67M).
+                # min=-5.0 → alpha≥0.007 (never fully remove entropy bonus)
+                # max=2.0  → alpha≤7.4  (Q-signal always visible to the actor)
+                self.log_alpha.data.clamp_(min=-5.0, max=2.0)
             self.alpha_value = self.log_alpha.exp().item()
 
         # ---- Soft update target networks ----

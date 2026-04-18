@@ -121,6 +121,8 @@ def parse_args():
     p.add_argument('--episode-steps', type=int,   default=1000,  help='Max steps per training episode (default 1000)')
     p.add_argument('--num-envs',      type=int,   default=1,     help='Number of parallel envs per symbol (vectorized training, v11+). Default 1 = serial loop.')
     p.add_argument('--buffer-size',   type=int,   default=None,  help='Replay buffer capacity. Defaults to 200k (serial) or 200k×num_envs (vectorized).')
+    p.add_argument('--exploit-start', type=int,   default=None,  help='Step to freeze auto-alpha and begin linear decay to floor (v12 piecewise entropy). Default: disabled.')
+    p.add_argument('--exploit-floor', type=float, default=-3.0,  help='log_alpha floor during exploit phase (default -3.0 → alpha≈0.05).')
     return p.parse_args()
 
 
@@ -158,6 +160,10 @@ def main():
     buf_size = args.buffer_size or (200_000 * max(args.num_envs, 1))
     sac_cfg['buffer_size'] = buf_size
     print(f"[TRAIN] Replay buffer: {buf_size:,} transitions")
+    if args.exploit_start is not None:
+        sac_cfg['exploit_start_step'] = args.exploit_start
+        sac_cfg['exploit_floor']      = args.exploit_floor
+        print(f"[TRAIN] Piecewise entropy: exploit phase starts at step {args.exploit_start}, floor log_alpha={args.exploit_floor:.2f} (alpha≈{np.exp(args.exploit_floor):.3f})")
     agent = SAC(config=sac_cfg)
     if args.resume:
         agent.load(args.resume)
