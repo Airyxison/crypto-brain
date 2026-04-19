@@ -226,6 +226,7 @@ class OrderBookSimulator:
             'pnl': pnl,
             'pnl_pct': pnl / self.position.cost_basis,
             'bars_held': self.current_bar - self.position.entry_bar,
+            'entry_step': self.position.entry_bar,
             'reason': reason,
         })
         self.position = None
