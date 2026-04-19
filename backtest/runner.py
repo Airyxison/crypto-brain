@@ -51,11 +51,32 @@ def compute_max_drawdown(portfolio_values: np.ndarray) -> float:
     return float(drawdowns.min())
 
 
+DEPLOYMENT_BAR = {
+    'sortino_ratio':    0.05,   # must be >= this
+    'max_drawdown_pct': -15.0,  # must be >= this (less negative)
+    'win_rate_pct':     50.0,   # must be >= this
+    'profit_factor':    1.2,    # must be >= this
+}
+
+
+def check_deployment_gate(results: dict, bar: dict | None = None) -> dict:
+    """Return per-metric pass/fail and overall verdict against deployment thresholds."""
+    thresholds = bar or DEPLOYMENT_BAR
+    checks = {
+        'sortino_ratio':    results['sortino_ratio']    >= thresholds['sortino_ratio'],
+        'max_drawdown_pct': results['max_drawdown_pct'] >= thresholds['max_drawdown_pct'],
+        'win_rate_pct':     results['win_rate_pct']     >= thresholds['win_rate_pct'],
+        'profit_factor':    results.get('profit_factor', 0) >= thresholds['profit_factor'],
+    }
+    return {'checks': checks, 'passed': all(checks.values()), 'thresholds': thresholds}
+
+
 def run_backtest(
     agent:    SAC,
     ticks:    list[dict],
     config:   dict | None = None,
     verbose:  bool = True,
+    gate:     bool = False,
 ) -> dict:
     # Override episode truncation for evaluation — run the full tick slice,
     # not the short 200-step windows used during training.
@@ -111,14 +132,19 @@ def run_backtest(
     sortino       = compute_sortino(ret_arr)
 
     winning_trades = [t for t in trades if t['pnl'] > 0]
+    losing_trades  = [t for t in trades if t['pnl'] <= 0]
     win_rate       = len(winning_trades) / len(trades) * 100 if trades else 0.0
     avg_hold       = np.mean([t['bars_held'] for t in trades]) if trades else 0.0
+    gross_profit   = sum(t['pnl'] for t in winning_trades)
+    gross_loss     = abs(sum(t['pnl'] for t in losing_trades))
+    profit_factor  = round(gross_profit / gross_loss, 4) if gross_loss > 0 else float('inf')
 
     results = {
         'total_return_pct':  round(total_return, 2),
         'sortino_ratio':     round(sortino, 4),
         'max_drawdown_pct':  round(max_drawdown, 2),
         'win_rate_pct':      round(win_rate, 2),
+        'profit_factor':     profit_factor,
         'total_trades':      len(trades),
         'avg_hold_bars':     round(avg_hold, 1),
         'final_value':       round(pv_arr[-1], 2),
@@ -131,6 +157,9 @@ def run_backtest(
     total_a = max(sum(action_counts), 1)
     action_dist = '  '.join(f"{ACTION_NAMES[i]}:{action_counts[i]/total_a*100:.0f}%" for i in range(5))
 
+    if gate:
+        results['deployment_gate'] = check_deployment_gate(results)
+
     if verbose:
         print("\n" + "="*50)
         print("  BACKTEST RESULTS")
@@ -139,10 +168,18 @@ def run_backtest(
         print(f"  Sortino Ratio:  {results['sortino_ratio']:.4f}")
         print(f"  Max Drawdown:   {results['max_drawdown_pct']:.2f}%")
         print(f"  Win Rate:       {results['win_rate_pct']:.1f}%")
+        print(f"  Profit Factor:  {results['profit_factor']:.4f}")
         print(f"  Total Trades:   {results['total_trades']}")
         print(f"  Avg Hold:       {results['avg_hold_bars']:.0f} bars")
         print(f"  Final Value:    ${results['final_value']:,.2f}")
         print(f"  Actions:        {action_dist}")
+        if 'deployment_gate' in results:
+            dg = results['deployment_gate']
+            verdict = "PASS ✓" if dg['passed'] else "FAIL ✗"
+            print(f"\n  Deployment Gate: {verdict}")
+            for metric, passed in dg['checks'].items():
+                mark = "✓" if passed else "✗"
+                print(f"    {mark} {metric}: {results.get(metric, '?')} (threshold: {dg['thresholds'][metric]})")
         print("="*50 + "\n")
 
     return results
