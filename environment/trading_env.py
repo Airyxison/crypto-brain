@@ -33,9 +33,19 @@ CANCEL_ORDER  = 4
 # Reward hyperparameters
 ALPHA         = 0.5    # drawdown penalty weight
 BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
-GAMMA         = 0.00001 # losing hold cost per bar (v10: reduced 10x — at 0.0001, 300-bar drag ~0.03 exceeded typical +0.02 win, inadvertently punishing position-holding)
+GAMMA         = 0.0001  # losing hold cost per bar (v12.2: 10x from v10 — now proportional to position loss depth)
 EPSILON       = 0.00001 # opportunity cost: penalty for holding cash while market moves (v10: reduced 10x — same magnitude fix)
 MIN_HOLD_BARS = 50     # minimum bars before an agent-chosen exit earns a realized bonus
+
+# Regime-aware sampling (v12.2): weights for episode start point selection.
+# Computed once in __init__, based on rolling 8h return to identify BEAR periods.
+# BEAR windows get 3x weight, BULL 0.5x, RANGE 1x — corrects the BULL-dominated
+# training distribution that caused the agent to enter trades during the 2022 crash.
+REGIME_BEAR_WEIGHT = 3.0
+REGIME_BULL_WEIGHT = 0.5
+REGIME_WINDOW      = 480   # bars (~8h at 1-min) for rolling return classification
+REGIME_BEAR_THRESH = -0.05 # 8h return < -5% → BEAR
+REGIME_BULL_THRESH =  0.05 # 8h return > +5% → BULL
 
 
 class TradingEnv(gym.Env):
@@ -64,14 +74,41 @@ class TradingEnv(gym.Env):
         self._ob       = OrderBookSimulator(self.initial_cash)
         self._features = FeatureEngineer()
 
+        # Precompute regime weights for episode start sampling (v12.2)
+        regime_sampling = self.config.get('regime_sampling', True)
+        self._regime_weights = self._compute_regime_weights() if regime_sampling else None
+
+    def _compute_regime_weights(self) -> np.ndarray:
+        """Assign sampling weight to each tick based on 8h rolling return regime.
+        Oversamples BEAR periods to correct the BULL-heavy training distribution."""
+        prices  = np.array([t['price'] for t in self.ticks], dtype=np.float64)
+        n       = len(prices)
+        weights = np.ones(n, dtype=np.float32)
+        for i in range(REGIME_WINDOW, n):
+            ret = (prices[i] - prices[i - REGIME_WINDOW]) / (prices[i - REGIME_WINDOW] + 1e-9)
+            if ret < REGIME_BEAR_THRESH:
+                weights[i] = REGIME_BEAR_WEIGHT
+            elif ret > REGIME_BULL_THRESH:
+                weights[i] = REGIME_BULL_WEIGHT
+        return weights
+
     # -------------------------------------------------------------------------
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
-        # Start at a random point deep enough to have full feature history
+        # Start at a random point deep enough to have full feature history.
+        # v12.2: regime-weighted sampling oversamples BEAR windows.
         max_start = max(MIN_WINDOW, len(self.ticks) - self.max_hold_bars - 1)
-        start = self.np_random.integers(MIN_WINDOW, max_start) if max_start > MIN_WINDOW else MIN_WINDOW
+        if max_start > MIN_WINDOW:
+            if self._regime_weights is not None:
+                w = self._regime_weights[MIN_WINDOW:max_start].copy()
+                w /= w.sum()
+                start = int(self.np_random.choice(max_start - MIN_WINDOW, p=w)) + MIN_WINDOW
+            else:
+                start = int(self.np_random.integers(MIN_WINDOW, max_start))
+        else:
+            start = MIN_WINDOW
 
         self._idx        = start
         self._step_count = 0
@@ -182,12 +219,14 @@ class TradingEnv(gym.Env):
         # Stop-loss hit — capital preservation is a hard constraint
         stop_penalty = -BETA if event.get('stop_hit') else 0.0
 
-        # Cost for holding a losing position (encourages decisive exits)
+        # Cost for holding a losing position — proportional to loss depth (v12.2).
+        # Scales with how underwater the position is: deeper loss → higher cost per bar.
+        # Encourages the agent to cut losses early rather than hold through crashes.
         hold_cost = 0.0
         if self._ob.position:
             pnl_pct = self._ob.position.unrealized_pnl_pct(self.ticks[self._idx - 1]['price'])
             if pnl_pct < -0.01:
-                hold_cost = -GAMMA
+                hold_cost = -GAMMA * (1.0 + abs(pnl_pct) * 5.0)
 
         # Opportunity cost: penalize sitting in cash when price trends up.
         # NOTE: no inner *1000 — the outer *1000 in step() is the only amplifier.
