@@ -33,16 +33,15 @@ CANCEL_ORDER  = 4
 # Reward hyperparameters
 ALPHA         = 0.5    # drawdown penalty weight
 BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
-GAMMA         = 0.0001  # losing hold cost per bar (v12.2: 10x from v10 — now proportional to position loss depth)
+GAMMA         = 0.00003 # losing hold cost per bar (v12.3: between v10 0.00001 and v12.2 0.0001 — v12.2 was too aggressive)
 EPSILON       = 0.00001 # opportunity cost: penalty for holding cash while market moves (v10: reduced 10x — same magnitude fix)
 MIN_HOLD_BARS = 50     # minimum bars before an agent-chosen exit earns a realized bonus
 
-# Regime-aware sampling (v12.2): weights for episode start point selection.
-# Computed once in __init__, based on rolling 8h return to identify BEAR periods.
-# BEAR windows get 3x weight, BULL 0.5x, RANGE 1x — corrects the BULL-dominated
-# training distribution that caused the agent to enter trades during the 2022 crash.
-REGIME_BEAR_WEIGHT = 3.0
-REGIME_BULL_WEIGHT = 0.5
+# Regime-aware sampling (v12.3): lighter weights than v12.2.
+# v12.2 at 3x BEAR / 0.5x BULL overcorrected — flooded training with crashes,
+# agent couldn't learn profitable behavior. v12.3 nudges the distribution gently.
+REGIME_BEAR_WEIGHT = 2.0
+REGIME_BULL_WEIGHT = 0.8
 REGIME_WINDOW      = 480   # bars (~8h at 1-min) for rolling return classification
 REGIME_BEAR_THRESH = -0.05 # 8h return < -5% → BEAR
 REGIME_BULL_THRESH =  0.05 # 8h return > +5% → BULL
@@ -226,7 +225,7 @@ class TradingEnv(gym.Env):
         if self._ob.position:
             pnl_pct = self._ob.position.unrealized_pnl_pct(self.ticks[self._idx - 1]['price'])
             if pnl_pct < -0.01:
-                hold_cost = -GAMMA * (1.0 + abs(pnl_pct) * 5.0)
+                hold_cost = -GAMMA * (1.0 + abs(pnl_pct) * 2.0)
 
         # Opportunity cost: penalize sitting in cash when price trends up.
         # NOTE: no inner *1000 — the outer *1000 in step() is the only amplifier.
