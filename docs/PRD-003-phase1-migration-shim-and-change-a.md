@@ -428,13 +428,99 @@ REGIME_BULL_WEIGHT = 0.8   # 0.8x BULL samples (slight under-sample)
 
 ---
 
+## Kiran's Review Notes (2026-04-21)
+
+Overall: excellent PRD. Three concrete fixes required before code is written.
+
+---
+
+**🔴 FIX 1 — Wrong state_dict key (migration script will crash)**
+
+The PRD uses `fc1.weight` throughout the migration math and appendix. This is incorrect.
+Actor and Critic both use `nn.Sequential`, so the first linear layer key in the
+state_dict is `net.0.weight`, not `fc1.weight`. Using `fc1.weight` will raise a
+`KeyError` on load. Every reference in the migration script must use `net.0.weight`.
+
+Correction to Appendix A:
+```python
+# WRONG:
+old_weight = checkpoint['actor']['fc1.weight']
+
+# CORRECT:
+old_weight = checkpoint['actor']['net.0.weight']
+```
+
+---
+
+**🔴 FIX 2 — `momentum_8h` caching timing mismatch**
+
+FR-2.2 says: "In `extract()`, store computed `momentum_8h` value to `self._momentum_8h`."
+This is one step stale. In `trading_env.step()`, the call order is:
+1. `self._features.update(price, volume, t_ms)` — prices deque updated
+2. `self._compute_reward(...)` — reads `self._features.momentum_8h` ← HERE
+3. `self._get_obs()` → `self._features.extract(...)` — cache would be set HERE
+
+`_compute_reward` runs BEFORE `extract()`. The cached property would return the value
+from the previous step's extract(), not the current tick.
+
+**Fix**: Compute `momentum_8h` inline in `_compute_reward()` directly from the prices
+deque (already available on the FeatureEngineer instance). No caching needed:
+
+```python
+# In _compute_reward, before opp_cost block:
+prices = self._features.prices
+if len(prices) >= 480:
+    momentum_8h = (prices[-1] - prices[-480]) / (prices[-480] + 1e-9)
+else:
+    momentum_8h = 0.0
+```
+
+This is simpler than the cached property approach and has no stale-value risk.
+The `@property momentum_8h` on FeatureEngineer can still be added (useful for
+diagnostics and the masking experiment) but should NOT be the source of truth
+inside `_compute_reward`.
+
+---
+
+**🟡 NOTE — Phase 0b not yet deployed**
+
+The PRD assumes "ASSUMED YES" for Phase 0b (W&B regime logging). It is NOT deployed.
+Treat this as a blocker per the risk table. Phase 0b must ship in the same commit as
+Phase 1, or before it. The simplest path: merge both into a single deployment.
+
+---
+
+**✅ S3 path confirmed**
+
+The open question about the v12.1 checkpoint S3 path is resolved:
+```
+s3://nova-trader-data-249899228939-us-east-1-an/checkpoints/btcusdt/nova_brain_best.pt
+```
+This is the 16-dim v12.1 checkpoint (Sortino +0.1076). Tag it as:
+```
+s3://nova-trader-data-249899228939-us-east-1-an/checkpoints/btcusdt/nova_brain_v12.1_best_sortino0.1076.pt
+```
+before any migration operations.
+
+---
+
+**✅ Everything else approved as written.**
+
+AC-1 through AC-12 are sufficient. The weight extension math (Appendix A) is correct
+once `fc1.weight` is replaced with `net.0.weight`. The risk table is thorough.
+The sign-off checklist is the right governance. Ready to implement once fixes 1 and 2
+are applied.
+
+---
+
 ## Sign-Off Checklist (Pre-Implementation)
 
 **Before writing code**:
-- [ ] Kiran confirms AC-1 through AC-12 are sufficient for approval
-- [ ] Developer confirms S3 path to v12.1 checkpoint
-- [ ] Phase 0b regime logging confirmed deployed (or merged into this deployment)
-- [ ] Migration script reviewed for copy-tag logic (no overwrite risk)
+- [ ] FIX 1 applied: all `fc1.weight` references replaced with `net.0.weight`
+- [ ] FIX 2 applied: `momentum_8h` computed inline in `_compute_reward()`, not via cached property
+- [ ] Phase 0b regime logging merged into this deployment (not assumed — confirmed)
+- [ ] S3 path confirmed: `btcusdt/nova_brain_best.pt` (resolved above)
+- [ ] Migration script copy-tag logic reviewed (no overwrite risk)
 
 **Before training**:
 - [ ] Migration script tested on synthetic 16-dim checkpoint (shapes correct)
