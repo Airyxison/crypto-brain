@@ -291,11 +291,11 @@ def main():
             s3_upload(str(ck_path), f'checkpoints/{args.symbol.lower()}/nova_brain_step{step}.pt')
 
             print("[TRAIN] Running validation backtest...")
-            results   = run_backtest(agent, test_ticks, verbose=True)
+            results   = run_backtest(agent, test_ticks, verbose=True, regimes=True)
             sortino   = results['sortino_ratio']
             total_a   = max(sum(action_counts), 1)
 
-            wandb_log(wb, {
+            wandb_payload = {
                 'step':              step,
                 'val/sortino':       sortino,
                 'val/total_return':  results['total_return_pct'],
@@ -304,7 +304,14 @@ def main():
                 'val/avg_hold_bars': results['avg_hold_bars'],
                 'val/max_drawdown':  results['max_drawdown_pct'],
                 'val/final_value':   results['final_value'],
-            })
+            }
+            for regime, m in results.get('regime_metrics', {}).items():
+                if m['steps'] > 0:
+                    wandb_payload[f'regime/{regime}/sortino']      = m['sortino']
+                    wandb_payload[f'regime/{regime}/max_drawdown'] = m['max_drawdown']
+                    wandb_payload[f'regime/{regime}/win_rate']     = m['win_rate']
+                    wandb_payload[f'regime/{regime}/trades']       = m['trades']
+            wandb_log(wb, wandb_payload)
 
             total_trades = results.get('total_trades', 0)
             if sortino > best_sortino and total_trades > 0:
@@ -318,16 +325,23 @@ def main():
 
     # Final backtest
     print("\n[TRAIN] === FINAL BACKTEST ===")
-    final_results = run_backtest(agent, test_ticks, verbose=True)
+    final_results = run_backtest(agent, test_ticks, verbose=True, regimes=True)
 
-    wandb_log(wb, {
+    final_payload = {
         'step':                   args.steps,
         'final/sortino':          final_results['sortino_ratio'],
         'final/total_return':     final_results['total_return_pct'],
         'final/win_rate':         final_results['win_rate_pct'],
         'final/total_trades':     final_results['total_trades'],
         'final/max_drawdown':     final_results['max_drawdown_pct'],
-    })
+    }
+    for regime, m in final_results.get('regime_metrics', {}).items():
+        if m['steps'] > 0:
+            final_payload[f'final/regime/{regime}/sortino']      = m['sortino']
+            final_payload[f'final/regime/{regime}/max_drawdown'] = m['max_drawdown']
+            final_payload[f'final/regime/{regime}/win_rate']     = m['win_rate']
+            final_payload[f'final/regime/{regime}/trades']       = m['trades']
+    wandb_log(wb, final_payload)
 
     # Save final
     final_path = save_dir / 'nova_brain_final.pt'
