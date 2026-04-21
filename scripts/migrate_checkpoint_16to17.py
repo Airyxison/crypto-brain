@@ -188,8 +188,9 @@ def main():
 
         # Verify the saved file loads correctly
         verify = torch.load(local_dst, map_location='cpu', weights_only=False)
-        assert tuple(verify['actor'][LAYER_KEY].shape)  == (HIDDEN, NEW_DIM), "Verify actor failed"
-        assert tuple(verify['critic'][LAYER_KEY].shape) == (HIDDEN, NEW_DIM), "Verify critic failed"
+        assert tuple(verify['actor'][LAYER_KEY].shape)   == (HIDDEN, NEW_DIM), "Verify actor failed"
+        assert tuple(verify['critic1'][LAYER_KEY].shape) == (HIDDEN, NEW_DIM), "Verify critic1 failed"
+        assert tuple(verify['critic2'][LAYER_KEY].shape) == (HIDDEN, NEW_DIM), "Verify critic2 failed"
         print("[MIGRATE] Verification passed — saved file loads and shapes are correct.")
 
         # Step 6: upload migrated checkpoint
