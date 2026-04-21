@@ -226,16 +226,26 @@ class TradingEnv(gym.Env):
             if pnl_pct < -0.01:
                 hold_cost = -GAMMA
 
-        # Opportunity cost: penalize sitting in cash when price trends up.
-        # NOTE: no inner *1000 — the outer *1000 in step() is the only amplifier.
-        # Previous version had *1e6 compound scale which overwhelmed the base signal.
+        # Opportunity cost: regime-conditional (v12.5 Change A).
+        # Bull regime (momentum_8h > 0, price rising): penalize cash-holding.
+        # Bear regime (momentum_8h < 0, price falling): bonus for correct inaction.
+        # RANGE / mismatched regimes: no opp_cost (avoid conflicting gradients).
         opp_cost = 0.0
         if not self._ob.position and not self._ob.pending_order and self._idx >= 2:
             prev_price = self.ticks[self._idx - 2]['price']
             curr_price = self.ticks[self._idx - 1]['price']
             price_move = (curr_price - prev_price) / (prev_price + 1e-9)
-            if price_move > 0:
-                opp_cost = -EPSILON * price_move
+            # Inline computation from prices deque — avoids caching timing mismatch
+            # (_compute_reward runs before _get_obs/extract in the step loop).
+            prices_dq = self._features.prices
+            if len(prices_dq) >= 480:
+                momentum_8h = (prices_dq[-1] - prices_dq[-480]) / (prices_dq[-480] + 1e-9)
+            else:
+                momentum_8h = 0.0
+            if price_move > 0 and momentum_8h > 0:
+                opp_cost = -EPSILON * price_move       # bull: penalty for missing upside
+            elif price_move < 0 and momentum_8h < 0:
+                opp_cost = +EPSILON * abs(price_move)  # bear: bonus for correct cash-holding
 
         # Realized gain/loss bonus — explicit credit assignment when a trade closes.
         # Stop-triggered exits: just the raw PnL (agent didn't choose the timing).

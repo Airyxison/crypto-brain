@@ -284,6 +284,16 @@ def main():
                 'episodes':           len(episode_rewards),
             })
 
+        # Column [16] weight norm — tracks how quickly agent learns to use momentum_8h.
+        # Near-zero at step 0 (migration init), should grow > 0.2 by step 30k.
+        if step % 10_000 == 0:
+            try:
+                col16_norm = float(agent.actor.net[0].weight[:, 16].norm())
+                wandb_log(wb, {'step': step, 'weights/actor_fc1_col16_norm': col16_norm})
+                print(f"[Step {step:>6}] actor col[16] weight norm = {col16_norm:.5f}")
+            except (AttributeError, IndexError):
+                pass  # checkpoint not migrated or architecture mismatch — skip silently
+
         # Checkpoint + validation backtest
         if step % args.save_every == 0:
             ck_path = save_dir / f'nova_brain_step{step}.pt'

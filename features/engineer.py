@@ -60,6 +60,16 @@ class FeatureEngineer:
         return self._ready
 
     @property
+    def momentum_8h(self) -> float:
+        """8-hour rolling return. Diagnostic use only — do NOT call from _compute_reward
+        (one step stale due to call order: _compute_reward runs before extract)."""
+        prices = self.prices
+        if len(prices) >= 480:
+            base = prices[-480]
+            return (prices[-1] - base) / (base + 1e-9)
+        return 0.0
+
+    @property
     def current_volatility(self) -> float:
         """Raw (unclipped) 1h realized volatility — for stop-loss sizing at entry.
         Returns 0.0 if not enough history yet."""
