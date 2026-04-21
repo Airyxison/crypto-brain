@@ -1,7 +1,7 @@
 # PRD: Phase 1 — Checkpoint Migration Shim & Regime-Conditional Reward
 
 ## Overview
-**Status**: Draft  
+**Status**: In Review — Fixes Applied (2026-04-21)  
 **Created**: 2026-04-20  
 **Owner**: Development Team  
 **Type**: Brownfield  
@@ -75,7 +75,7 @@ The 16→17 dimension incompatibility means the best performing checkpoint canno
 
 **Key Components**:
 - `agent/sac.py` — SAC agent with Actor and Critic networks
-- `agent/networks.py` — Network definitions: `nn.Linear(STATE_DIM, 256)` first layer
+- `agent/networks.py` — Network definitions: Actor and Critic use `nn.Sequential`; first linear layer state_dict key is `net.0.weight` (NOT `fc1.weight`)
 - `environment/trading_env.py` — RL environment, reward computation
 - `features/engineer.py` — Computes 17-dim observation vector
 - `train.py` — Training loop with W&B logging
@@ -129,7 +129,7 @@ elif price_move < 0 and momentum_8h < 0:
 1. **Checkpoint Migration Script**
    - **FR-1.1**: Load 16-dim checkpoint from S3 path (user-provided or default to `btcusdt/nova_brain_best.pt`)
    - **FR-1.2**: Extract Actor and Critic state_dicts
-   - **FR-1.3**: For each network's first linear layer (`fc1.weight`), extend from shape `[256, 16]` to `[256, 17]`
+   - **FR-1.3**: For each network's first linear layer (`net.0.weight`), extend from shape `[256, 16]` to `[256, 17]`
    - **FR-1.4**: Initialize new column as `torch.zeros(256, 1) * 0.01 + torch.randn(256, 1) * 0.001`
    - **FR-1.5**: Copy all other layer weights unchanged (they are shape-compatible)
    - **FR-1.6**: Save migrated checkpoint to S3: `btcusdt/nova_brain_v12.1_migrated_17dim.pt`
@@ -138,25 +138,32 @@ elif price_move < 0 and momentum_8h < 0:
    - **Priority**: **High**
 
 2. **FeatureEngineer Cached Property**
-   - **FR-2.1**: Add instance variable `self._momentum_8h: float` initialized to 0.0 in `__init__`
-   - **FR-2.2**: In `extract()`, store computed `momentum_8h` value to `self._momentum_8h` before returning state vector
-   - **FR-2.3**: Expose `@property momentum_8h` that returns `self._momentum_8h`
-   - **FR-2.4**: Property must return the value computed in the MOST RECENT `extract()` call (no stale values)
-   - **Priority**: **High**
+   - **FR-2.1**: ~~Add instance variable `self._momentum_8h` and `@property momentum_8h` as cache~~ — **SUPERSEDED by FIX 2** (see Kiran's review notes)
+   - **FR-2.2**: `@property momentum_8h` on `FeatureEngineer` MAY still be added for diagnostics/masking experiment, but must NOT be used as the source of truth inside `_compute_reward()` due to timing mismatch
+   - **Priority**: **Low** (diagnostic only)
 
 3. **Regime-Conditional Reward**
    - **FR-3.1**: In `_compute_reward()`, replace unconditional opportunity cost block with regime-conditional logic
-   - **FR-3.2**: Bull regime (`price_move > 0 AND momentum_8h > 0`): apply penalty `-EPSILON * price_move`
-   - **FR-3.3**: Bear regime (`price_move < 0 AND momentum_8h < 0`): apply bonus `+EPSILON * abs(price_move)`
-   - **FR-3.4**: No opp_cost change in RANGE regime (momentum_8h near zero) or mismatched regimes
-   - **FR-3.5**: Magnitude of bonus and penalty must be equal (same `EPSILON` constant)
+   - **FR-3.2**: Compute `momentum_8h` inline from `self._features.prices` deque — NOT from cached property (FIX 2):
+     ```python
+     prices = self._features.prices
+     if len(prices) >= 480:
+         momentum_8h = (prices[-1] - prices[-480]) / (prices[-480] + 1e-9)
+     else:
+         momentum_8h = 0.0
+     ```
+   - **FR-3.3**: Bull regime (`price_move > 0 AND momentum_8h > 0`): apply penalty `-EPSILON * price_move`
+   - **FR-3.4**: Bear regime (`price_move < 0 AND momentum_8h < 0`): apply bonus `+EPSILON * abs(price_move)`
+   - **FR-3.5**: No opp_cost change in RANGE regime (momentum_8h near zero) or mismatched regimes
+   - **FR-3.6**: Magnitude of bonus and penalty must be equal (same `EPSILON` constant)
    - **Priority**: **High**
 
 4. **Training Loop Integration**
    - **FR-4.1**: Load migrated checkpoint at start of v12.5 training (modify `train.py`)
-   - **FR-4.2**: Log `actor.fc1.weight[:, 16].norm()` to W&B every 10k steps (optional but recommended)
-   - **FR-4.3**: Continue existing W&B logging: critic/actor loss, alpha, regime Sortino breakdowns
-   - **Priority**: **Medium**
+   - **FR-4.2**: ~~Log `actor.fc1.weight[:, 16].norm()`~~ → **CORRECT KEY**: Log `actor.net[0].weight[:, 16].norm()` to W&B every 10k steps (optional but recommended)
+   - **FR-4.3**: W&B regime logging (Phase 0b) must be deployed in this same commit — not assumed active (FIX 3)
+   - **FR-4.4**: Continue existing W&B logging: critic/actor loss, alpha, regime Sortino breakdowns
+   - **Priority**: **High** (FR-4.3 is a blocker)
 
 ### Non-Functional Requirements
 
@@ -191,7 +198,7 @@ elif price_move < 0 and momentum_8h < 0:
 
 ### Should Have (P1)
 
-- [ ] **AC-13**: Weight norm of `actor.fc1.weight[:, 16]` logged to W&B every 10k steps
+- [ ] **AC-13**: Weight norm of `actor.net[0].weight[:, 16]` logged to W&B every 10k steps
 - [ ] **AC-14**: Column [16] weight norm near-zero (< 0.05) at step 0
 - [ ] **AC-15**: Column [16] weight norm visibly non-zero (> 0.2) by step 30k
 - [ ] **AC-16**: Average hold bars remain > 100 bars (no scalping regression)
@@ -358,9 +365,9 @@ BEFORE: fc1.weight.shape = [256, 16]  (output_features, input_features)
 AFTER:  fc1.weight.shape = [256, 17]
 ```
 
-**Extension operation**:
+**Extension operation** (FIX 1 applied — key is `net.0.weight`, not `fc1.weight`):
 ```python
-old_weight = checkpoint['actor']['fc1.weight']  # [256, 16]
+old_weight = checkpoint['actor']['net.0.weight']  # [256, 16]
 new_col = torch.zeros(256, 1) * 0.01 + torch.randn(256, 1) * 0.001
 new_weight = torch.cat([old_weight, new_col], dim=1)  # [256, 17]
 ```
@@ -516,14 +523,14 @@ are applied.
 ## Sign-Off Checklist (Pre-Implementation)
 
 **Before writing code**:
-- [ ] FIX 1 applied: all `fc1.weight` references replaced with `net.0.weight`
-- [ ] FIX 2 applied: `momentum_8h` computed inline in `_compute_reward()`, not via cached property
-- [ ] Phase 0b regime logging merged into this deployment (not assumed — confirmed)
-- [ ] S3 path confirmed: `btcusdt/nova_brain_best.pt` (resolved above)
+- [x] FIX 1 applied: all `fc1.weight` references replaced with `net.0.weight` *(2026-04-21)*
+- [x] FIX 2 applied: `momentum_8h` computed inline in `_compute_reward()` from `prices` deque, not via cached property *(2026-04-21)*
+- [x] Phase 0b regime logging merged into this deployment — confirmed blocker, not assumed *(2026-04-21)*
+- [x] S3 path confirmed: `s3://nova-trader-data-249899228939-us-east-1-an/checkpoints/btcusdt/nova_brain_best.pt` *(2026-04-21)*
 - [ ] Migration script copy-tag logic reviewed (no overwrite risk)
 
 **Before training**:
-- [ ] Migration script tested on synthetic 16-dim checkpoint (shapes correct)
+- [ ] Migration script tested on synthetic 16-dim checkpoint (shapes correct, key `net.0.weight` verified)
 - [ ] Unit tests passing for `momentum_8h` property
 - [ ] Migrated checkpoint manually loaded in Python REPL (no shape errors)
 - [ ] W&B project configured to receive new metrics (`weights/actor_fc1_col16_norm`)
