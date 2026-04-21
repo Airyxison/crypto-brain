@@ -167,6 +167,14 @@ def main():
     agent = SAC(config=sac_cfg)
     if args.resume:
         agent.load(args.resume)
+        # exploit_start_step is an absolute steps counter. After resuming, self.steps
+        # continues from the checkpoint value (e.g. 999k), so a fixed exploit_start=40k
+        # fires immediately. Re-anchor it to steps_at_resume + exploit_start so the
+        # piecewise schedule is relative to THIS training run.
+        if agent.exploit_start_step is not None:
+            agent.exploit_start_step = agent.steps + (args.exploit_start or 0)
+            agent._log_alpha_at_transition = None  # reset transition capture
+            print(f"[TRAIN] exploit_start_step re-anchored to {agent.exploit_start_step} (resume offset fix)")
     print(f"[TRAIN] Auto-alpha: {'ON (target_entropy={:.3f})'.format(agent.target_entropy) if agent.auto_alpha else 'OFF'}")
 
     # W&B run — no-op if WANDB_API_KEY not set
