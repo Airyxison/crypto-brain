@@ -119,18 +119,22 @@ def extend_state_dict(sd: dict, dry_run: bool) -> dict:
 
 
 def migrate(ckpt: dict) -> dict:
-    """Migrate full checkpoint dict: extend actor and critic state_dicts."""
+    """Migrate full checkpoint dict: extend actor, critic1, and critic2 state_dicts."""
     print("\n[MIGRATE] Actor net.0.weight:")
-    ckpt['actor']  = extend_state_dict(ckpt['actor'],  dry_run=False)
-    print("[MIGRATE] Critic net.0.weight:")
-    ckpt['critic'] = extend_state_dict(ckpt['critic'], dry_run=False)
+    ckpt['actor']   = extend_state_dict(ckpt['actor'],   dry_run=False)
+    print("[MIGRATE] Critic1 net.0.weight:")
+    ckpt['critic1'] = extend_state_dict(ckpt['critic1'], dry_run=False)
+    print("[MIGRATE] Critic2 net.0.weight:")
+    ckpt['critic2'] = extend_state_dict(ckpt['critic2'], dry_run=False)
 
     # Final shape assertions
-    a_shape = tuple(ckpt['actor'][LAYER_KEY].shape)
-    c_shape = tuple(ckpt['critic'][LAYER_KEY].shape)
-    assert a_shape == (HIDDEN, NEW_DIM), f"Actor shape wrong: {a_shape}"
-    assert c_shape == (HIDDEN, NEW_DIM), f"Critic shape wrong: {c_shape}"
-    print(f"\n[MIGRATE] Assertions passed — actor {a_shape}, critic {c_shape}")
+    a_shape  = tuple(ckpt['actor'][LAYER_KEY].shape)
+    c1_shape = tuple(ckpt['critic1'][LAYER_KEY].shape)
+    c2_shape = tuple(ckpt['critic2'][LAYER_KEY].shape)
+    assert a_shape  == (HIDDEN, NEW_DIM), f"Actor shape wrong: {a_shape}"
+    assert c1_shape == (HIDDEN, NEW_DIM), f"Critic1 shape wrong: {c1_shape}"
+    assert c2_shape == (HIDDEN, NEW_DIM), f"Critic2 shape wrong: {c2_shape}"
+    print(f"\n[MIGRATE] Assertions passed — actor {a_shape}, critic1 {c1_shape}, critic2 {c2_shape}")
 
     return ckpt
 
@@ -171,8 +175,9 @@ def main():
         # Step 3: load and inspect
         ckpt = torch.load(local_src, map_location='cpu', weights_only=False)
         print(f"\n[MIGRATE] Checkpoint keys: {list(ckpt.keys())}")
-        print(f"[MIGRATE] actor net.0.weight shape (before): {tuple(ckpt['actor'][LAYER_KEY].shape)}")
-        print(f"[MIGRATE] critic net.0.weight shape (before): {tuple(ckpt['critic'][LAYER_KEY].shape)}")
+        print(f"[MIGRATE] actor   net.0.weight shape (before): {tuple(ckpt['actor'][LAYER_KEY].shape)}")
+        print(f"[MIGRATE] critic1 net.0.weight shape (before): {tuple(ckpt['critic1'][LAYER_KEY].shape)}")
+        print(f"[MIGRATE] critic2 net.0.weight shape (before): {tuple(ckpt['critic2'][LAYER_KEY].shape)}")
 
         # Step 4: migrate
         ckpt = migrate(ckpt)
