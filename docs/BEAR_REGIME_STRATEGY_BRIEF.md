@@ -3,7 +3,7 @@
 **Author:** Barney (Code Puppy — Eric's engineering assistant)
 **Date:** 2026-04-20
 **For:** Kiran (Testing Manager) — please read, annotate, and return with your observations
-**Status:** Kiran's annotations added 2026-04-21
+**Status:** Part 6 — Agreed Next Steps added by Barney 2026-04-21. Awaiting Kiran sign-off.
 
 ---
 
@@ -523,11 +523,160 @@ regime fix on first, then cross-apply carefully.
 
 ## Part 6 — Agreed Next Steps
 
-*To be filled in after Kiran's response is reviewed by Eric and Barney.*
+*Synthesised by Barney from full read of Kiran's annotations. Kiran's sign-off required
+before any implementation begins. No code changes until confirmed.*
 
-- [ ] TBD
-- [ ] TBD
-- [ ] TBD
+---
+
+### ⚠️ Correction to earlier framing
+
+The Sortino 1.73 / 1.62 checkpoint references in Part 2 Problem 6 are not accurate for
+this project. Per Kiran's S3 audit, the actual best Sortino across all training versions
+is **+0.1076** (v12.1, BTC, step 80k). The iter_log appears to describe a planned or
+hypothetical training history, not actual results. All forward planning is calibrated
+against +0.1076 as the true baseline.
+
+---
+
+### Root cause summary
+
+Three consecutive regressions (v12.2 → v12.3 → v12.4, all worse than v12.1) share a
+common cause: **each version stacked multiple changes simultaneously**, making it
+impossible to attribute outcomes to any single variable. v12.4 is additionally
+handicapped by training from random init rather than migrating from the v12.1 checkpoint,
+making the starting point significantly harder. The v12.4 run is currently plateaued at
+step ~100k with best Sortino -3.7082 and no improvement since step ~30k.
+
+The methodology fix is as important as the technical fixes: **one change per version,
+measured cleanly, before the next change is applied.**
+
+---
+
+### Phase 0 — Immediate (no training required)
+
+**0a — Protect the v12.1 checkpoint**
+Tag `btcusdt/nova_brain_best.pt` (v12.1, Sortino +0.1076) in S3 with an explicit name
+before it is overwritten by any future training run:
+```
+s3://nova-trader-data-.../btcusdt/nova_brain_v12.1_best_sortino0.1076.pt
+```
+This is the only positive-Sortino checkpoint in existence. It is the baseline everything
+else must be measured against. Protect it first.
+
+**0b — Add W&B regime logging to train.py**
+`run_backtest` is currently called without `regimes=True`. Per-regime Sortino, drawdown,
+win rate, and profit factor are NOT streaming to W&B. This is a complete observability
+blindspot — we cannot currently see whether any training change is helping or hurting
+BEAR performance specifically. This is five lines in `train.py` and zero retraining.
+It must be in place before any further training runs begin.
+
+**0c — Run Track 1 diagnostic (read-only, no code shipped to production)**
+Using the v12.1 checkpoint (16-dim, rolled back in a local branch), run
+`run_backtest(..., regimes=True)` twice:
+- Once without BUY masking → establishes the BULL/BEAR/RANGE/HIGH_VOL Sortino baseline
+- Once with inference-time BUY masking when `momentum_8h < -0.02` → quantifies how much
+  of OOS loss is attributable to bear-regime entries
+
+This is a **diagnostic experiment only** — not a production path (per Kiran's note on
+training/inference mismatch). The output answers one question: how much of the loss is
+bear entries? If the answer is "most of it," Track 2 changes are the right investment.
+
+*Note: the v12.1 checkpoint uses 16-dim obs (no feature[16]). The masking threshold must
+use obs[15] — momentum_30d — as a proxy, or the branch must temporarily revert
+features/engineer.py to 16-dim. Coordinate with Kiran on which approach is cleaner.*
+
+---
+
+### Phase 1 — v12.5 (one change, cleanly isolated)
+
+**Prerequisite:** Phase 0 complete. v12.4 run concluded or terminated.
+
+**Starting point:** v12.1 checkpoint (Sortino +0.1076), migrated from 16-dim to 17-dim
+via a linear layer weight extension shim. New weight column initialised near-zero so
+the network's existing behaviour is preserved. Fine-tune stabilises the new feature's
+contribution over the first ~20-30k steps naturally.
+
+**The single change:** Regime-conditional opportunity cost + bear preservation bonus
+(Track 2, Change A). Specifically:
+- Gate the existing opp_cost penalty so it only fires when `momentum_8h > 0`
+  (cash in a bull trend is costly — unchanged from current intent)
+- Add a symmetric bear bonus: when `momentum_8h < 0` and price falls, reward
+  cash-holding at EPSILON scale (same coefficient, opposite sign, opposite conditions)
+- Expose `momentum_8h` as a cached property on `FeatureEngineer` so `_compute_reward`
+  can read it without triggering a full feature extraction pass
+
+**Everything else:** Identical to v12.1. Same network architecture, same hyperparameters,
+same regime sampling weights (BEAR 2×, BULL 0.8×), same piecewise entropy config
+(exploit_start=40k, floor log_alpha=-1.5). No other reward changes. No new features.
+
+**What to watch in W&B (now visible thanks to 0b):**
+- `regime/BEAR/sortino` and `regime/BULL/sortino` — primary signals
+- `regime/BEAR/trades` — are bear entries decreasing? That is the question.
+- Overall Sortino vs v12.1 baseline (+0.1076)
+- Alpha and entropy through the exploit transition at step 40k
+- Average hold bars — should not collapse below v12.1's ~180 bars
+
+**Success criterion:** BEAR Sortino trending positive, BULL Sortino stable or improving,
+overall Sortino exceeding +0.1076 at any checkpoint. All three are not required to
+proceed — any positive regime trend confirms the direction.
+
+---
+
+### Phase 2 — v12.6 (contingent on v12.5 improvement)
+
+Two additions, grouped because they are closely related:
+
+**Change B — Composite checkpoint selection**
+Guard `nova_brain_best.pt` saves on a composite score that requires bear performance
+to clear a minimum bar, not just overall Sortino. Starting bear floor should be soft
+(e.g. `> -1.0`) so early diagnostic saves are not blocked, tightened as training
+matures. Exact formula to be finalised after v12.5 data is in hand.
+
+**Change D — Regime-conditional MIN_HOLD_BARS**
+Halve the minimum hold threshold in bear regime (50 → 25 bars) so the agent is not
+penalised for taking quick profits on bear relief rallies. Watch average hold bars in
+bear regime closely — if it drops below 15-20 bars, the scalping door may have
+opened and the threshold needs revisiting.
+
+---
+
+### Phase 3 — v12.7+ (after stable positive Sortino baseline exists)
+
+**Feature additions:**
+Add SMA200 distance `(price - SMA200) / SMA200` to the observation space — the
+strongest missing regime discriminator, already used by `RegimeClassifier` in
+`backtest/runner.py`. One feature at a time. SMA200 first, measure, then decide
+on volatility ratio or momentum divergence.
+
+**Curriculum training:**
+Phase-based regime mixing (bull-only → 50/50 → bear-heavy) with a competence gate
+at phase transitions rather than fixed step counts. Requires bull Sortino > 0 before
+Phase 2 begins. Catastrophic forgetting mitigation required before implementation.
+
+---
+
+### Explicitly out of scope (this roadmap)
+
+| Item | Reason deferred |
+|------|----------------|
+| Short selling / SHORT action | Architectural scope creep — long-only must be stable first |
+| Variable position sizing | Same — future scope |
+| Cross-asset training (ETH/SOL/ADA) | Validate BTC bear fix first, then cross-apply |
+| Network architecture changes | Not the bottleneck |
+
+---
+
+### Kiran — please confirm before Barney writes a line of code
+
+- [ ] **0a** — S3 checkpoint tagging approach agreed
+- [ ] **0b** — W&B regime logging agreed as the first change made
+- [ ] **0c** — Track 1 masking diagnostic agreed; confirm preferred 16-dim branch strategy
+- [ ] **Phase 1** — v12.5 scope agreed: migration shim + Change A only, from v12.1 base
+- [ ] **Phase 2** — v12.6 scope agreed: Changes B + D, contingent on v12.5 results
+- [ ] **Phase 3** — v12.7+ scope agreed as future sprint, not current
+- [ ] **Amendments** — any concerns or corrections not yet captured above
+
+Once all boxes are checked, Barney implements in the order listed.
 
 ---
 
