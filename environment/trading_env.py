@@ -4,7 +4,7 @@ Trading Environment
 Gymnasium-compatible environment wrapping the order book simulator
 and feature engineer. Steps through historical tick data.
 
-Observation: 16-dim float32 vector (see features/engineer.py)
+Observation: 17-dim float32 vector (see features/engineer.py)
 Action:      Discrete(5)
   0 = HOLD
   1 = PLACE_BUY_LIMIT
@@ -65,7 +65,7 @@ class TradingEnv(gym.Env):
         self._step_count       = 0
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(16,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(17,), dtype=np.float32
         )
         self.action_space = spaces.Discrete(5)
 
@@ -218,14 +218,13 @@ class TradingEnv(gym.Env):
         # Stop-loss hit — capital preservation is a hard constraint
         stop_penalty = -BETA if event.get('stop_hit') else 0.0
 
-        # Cost for holding a losing position — proportional to loss depth (v12.2).
-        # Scales with how underwater the position is: deeper loss → higher cost per bar.
-        # Encourages the agent to cut losses early rather than hold through crashes.
+        # Cost for holding a losing position — flat penalty per bar when underwater.
+        # Proportional scaling (v12.2/12.3) over-penalized and cut hold times too short.
         hold_cost = 0.0
         if self._ob.position:
             pnl_pct = self._ob.position.unrealized_pnl_pct(self.ticks[self._idx - 1]['price'])
             if pnl_pct < -0.01:
-                hold_cost = -GAMMA * (1.0 + abs(pnl_pct) * 2.0)
+                hold_cost = -GAMMA
 
         # Opportunity cost: penalize sitting in cash when price trends up.
         # NOTE: no inner *1000 — the outer *1000 in step() is the only amplifier.
@@ -270,4 +269,4 @@ class TradingEnv(gym.Env):
         }
         if self._features.ready:
             return self._features.extract(position_state)
-        return np.zeros(16, dtype=np.float32)
+        return np.zeros(17, dtype=np.float32)

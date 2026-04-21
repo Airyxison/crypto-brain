@@ -1,7 +1,7 @@
 """
 Feature Engineering
 -------------------
-Converts raw tick data into a normalized 16-dimensional state vector.
+Converts raw tick data into a normalized 17-dimensional state vector.
 Operates on a rolling window — no lookahead, no leakage.
 
 Features:
@@ -21,6 +21,7 @@ Features:
   [13] momentum_1d         — 24h return (macro intraday trend)
   [14] momentum_7d         — 7-day return (weekly regime)
   [15] momentum_30d        — 30-day return (macro bull/bear regime)
+  [16] momentum_8h         — 8-hour return (explicit regime signal, matches REGIME_WINDOW=480)
 """
 
 import numpy as np
@@ -36,6 +37,7 @@ WINDOW_4H   = 14_400
 WINDOW_1D   = 1_440    # 24 hours
 WINDOW_7D   = 10_080   # 7 days
 WINDOW_30D  = 43_200   # 30 days — macro regime window
+WINDOW_8H   = 480      # 8-hour window — matches REGIME_WINDOW in trading_env.py
 MIN_WINDOW  = WINDOW_5M   # 5 min of history to start — regime features degrade gracefully
 
 
@@ -147,6 +149,7 @@ class FeatureEngineer:
         momentum_1d  = _momentum(WINDOW_1D)
         momentum_7d  = _momentum(WINDOW_7D)
         momentum_30d = _momentum(WINDOW_30D)
+        momentum_8h  = _momentum(WINDOW_8H)
 
         # Assemble state vector
         state = np.array([
@@ -166,6 +169,7 @@ class FeatureEngineer:
             float(np.clip(momentum_1d,  -0.2, 0.2)),           # [13] 24h trend
             float(np.clip(momentum_7d,  -0.5, 0.5)),           # [14] weekly regime
             float(np.clip(momentum_30d, -1.0, 1.0)),           # [15] macro bull/bear
+            float(np.clip(momentum_8h,  -0.5, 0.5)),           # [16] 8h regime signal
         ], dtype=np.float32)
 
         return state
