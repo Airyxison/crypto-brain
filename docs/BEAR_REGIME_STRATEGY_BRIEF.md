@@ -3,7 +3,7 @@
 **Author:** Barney (Code Puppy — Eric's engineering assistant)
 **Date:** 2026-04-20
 **For:** Kiran (Testing Manager) — please read, annotate, and return with your observations
-**Status:** Awaiting Kiran's input
+**Status:** Kiran's annotations added 2026-04-21
 
 ---
 
@@ -44,6 +44,12 @@ portfolio bleed. Chaotic.
 The approach is coherent. Regime-weighted sampling fixes training *coverage*. The 8h signal
 fixes inference *awareness*. Both are necessary. Neither alone is sufficient.
 
+> **Kiran:** Agreed on the framing. One addition: v12.2 and v12.3 both regressed from v12.1's
+> best Sortino of +0.1076. The proportional hold penalty introduced in v12.2 was a significant
+> contributor — it cut average hold times from ~180 bars to ~38 bars, which likely disrupted
+> the trade lifecycle the agent had partially learned. v12.4 reverted that to flat GAMMA and
+> kept only the mild regime sampling (2×/0.8×) alongside the new feature.
+
 ---
 
 ## Part 2 — Diagnosed Problems
@@ -63,6 +69,13 @@ fell and that was the right call." In contrast, a correct bull entry produces
 
 This asymmetry means bull Q-values will always dominate. The agent is not broken; the
 reward structure is biased.
+
+> **Kiran:** Confirmed — this is real and important. The asymmetry is structural. I'd add
+> one nuance: even if we add a bear preservation bonus, we need to be careful about scale.
+> If the bonus is too large relative to bull entry rewards, we risk training an agent that
+> never buys anything. The EPSILON/GAMMA magnitudes took several versions to calibrate —
+> a new bear bonus will need the same care. Suggest starting at EPSILON scale and tuning
+> from there.
 
 ---
 
@@ -86,6 +99,13 @@ oscillates because neither holding nor buying is consistently better.
 The opportunity cost was designed to nudge the agent into bull-market entries. In bear
 conditions it actively works against the goal.
 
+> **Kiran:** Agreed, and this is the fix I'm most confident about. The opp_cost was already
+> reduced 10× in v10 due to compounding scale issues — it's a known sensitive lever.
+> Track 2 Change A (regime-conditional opp_cost) is the right approach. Worth noting:
+> `momentum_8h` is already computed in `_features.extract()` — we just need to expose it
+> via a lightweight property (e.g. `self._features.momentum_8h`) rather than re-deriving
+> it inline in `_compute_reward`. Small refactor, low risk.
+
 ---
 
 ### Problem 3 — Feature set can't cleanly discriminate regime types 🟡
@@ -107,6 +127,15 @@ These require different behaviour but produce similar feature vectors. Missing s
 
 All computable from existing price/volume history. No new data needed.
 
+> **Kiran:** The missing signals are valid and I agree the SMA200 distance is the strongest
+> of the three — it's what the `RegimeClassifier` in `backtest/runner.py` already uses
+> (price vs SMA200, SMA50 vs SMA200) to classify regimes, so adding it to the obs space
+> would align training and evaluation. However, I'd hold this for v12.5 rather than stacking
+> it on top of an already-changed v12.4. Each iteration should test one hypothesis cleanly.
+> The momentum_8h we just added is already testing the "explicit regime signal" hypothesis —
+> let it conclude before layering more features. Adding too many features at once makes it
+> impossible to attribute a result (good or bad) to any one change.
+
 ---
 
 ### Problem 4 — MIN_HOLD_BARS penalises correct bear exits 🟡
@@ -121,6 +150,14 @@ if pct > 0 and bars_held < MIN_HOLD_BARS:
 This was designed to prevent micro-scalping in bull markets. In a bear, the right move
 after a brief entry is often to exit quickly on a relief rally — exactly what this
 penalises. The minimum hold period is regime-agnostic when it shouldn't be.
+
+> **Kiran:** Valid — but note that the penalty only applies to *profitable* premature exits.
+> A losing early exit (cutting a bad position) already passes through as raw PnL with no
+> additional penalty. This was a deliberate design from v9 to avoid "crossfire paralysis"
+> where the agent got double-punished for both the loss and the early exit. So the problem
+> is specifically: agent enters in a brief bear rally, it goes slightly positive, agent wants
+> to exit, MIN_HOLD_BARS penalises the profit. That's real. Track 2 Change D is the right
+> fix. The halved threshold (25 bars) in bear regime is reasonable as a starting point.
 
 ---
 
@@ -138,6 +175,13 @@ win rate, and profit factor. This is not being used. W&B only receives overall m
 You only see overall Sortino shift, which could be BULL getting better while BEAR stays
 broken — and you'd never know from the dashboard.
 
+> **Kiran:** Confirmed, and this is the single change I'd make *right now* regardless of
+> everything else. It costs nothing (no retraining, no architecture changes) and immediately
+> gives us the observability we need to evaluate every subsequent change. We have been flying
+> blind on per-regime performance. This should go into train.py today and the current v12.4
+> run should ideally be restarted with it enabled — though at step 100k it may not be worth
+> the restart cost. Suggest enabling for v12.5 at minimum, and patching in now if Eric agrees.
+
 ---
 
 ### Problem 6 — STATE_DIM 16→17 breaks all existing checkpoints 🔴 (practical)
@@ -149,6 +193,20 @@ will hard-crash on load.
 
 This means v12.4 is training from scratch. Not from the best known policy. That's a
 significant handicap that should be addressed.
+
+> **Kiran:** ⚠️ FLAG — I need to correct the checkpoint claims here. I checked S3 just now.
+> There are NO checkpoints with Sortino 1.73 or 1.62 in our bucket. The full list of
+> non-step checkpoints in S3 is: `btcusdt/nova_brain_best.pt` (17-dim, v12.4 current),
+> `btcusdt/nova_brain_final.pt` (16-dim, v12.3), and equivalent best/final for ETH/SOL/ADA.
+> Our best recorded Sortino across ALL versions has been **+0.1076** (v12.1, BTC, step 80k).
+> Barney may have seen checkpoint filenames from a different project or a hypothetical
+> example. Those numbers don't represent our actual training history. The checkpoint
+> incompatibility point is still valid — v12.4 IS training from scratch — but the framing
+> of "significant handicap vs a 1.73 Sortino policy" is not accurate for our project.
+>
+> The checkpoint migration shim idea (extend 16→17 dim near-zero init, fine-tune 30-50k)
+> is sound engineering and worth keeping as an option, but in our case we'd be migrating
+> from a +0.1076 Sortino policy, not a 1.73 one. That's a much smaller advantage to preserve.
 
 ---
 
@@ -187,6 +245,20 @@ This costs no training time and is reversible.
 shim to extend the 16-dim actor/critic first linear layer to 17 dims, initialising the
 new weight column near-zero. Fine-tune for 30–50k steps.
 
+> **Kiran:** Track 1 is compelling as a *diagnostic* — it can quantify exactly how much
+> of our OOS loss is bear-regime entry. Run it. But I have a concern about using masking
+> in production: the agent was trained without knowing BUY would be masked. Its ADJ_STOP
+> and REALIZE probabilities are calibrated assuming BUY is always a live option. Masking
+> it at inference creates a training/inference mismatch — the policy wasn't shaped to be
+> "second best" under those constraints. The OOS distribution would shift in ways the
+> Q-network never learned to handle.
+>
+> My recommendation: run Track 1 as a diagnostic experiment only, not a production path.
+> If it confirms bear entries are the primary loss source (likely), that justifies spending
+> the training budget on Track 2 fixes with confidence. The threshold `-0.02` for
+> `momentum_8h` is reasonable — our REGIME_BEAR_THRESH in trading_env.py is -0.05 for 8h
+> return, but -0.02 is a tighter, earlier signal which seems appropriate for masking.
+
 ---
 
 ### 🟡 Track 2 — Reward function fixes (1–2 weeks)
@@ -208,6 +280,13 @@ if not self._ob.position and not self._ob.pending_order and self._idx >= 2:
 Note: `momentum_8h` needs to be derived from `self._features` — it's already computed
 internally, just needs exposing to `_compute_reward`. Small refactor.
 
+> **Kiran:** Agree with this structure. One implementation note: `_compute_reward` currently
+> has no direct access to `self._features` outputs — it receives computed values via
+> `self._ob`. The cleanest approach is a `self._features.momentum_8h` property that returns
+> the cached value from the last `update()` call, rather than recomputing. Low refactor cost.
+> Scale: start at EPSILON (0.00001) for the bear_bonus — same magnitude as opp_cost — and
+> watch it in W&B before deciding to increase.
+
 **Change B — Regime-conditional checkpoint selection:**
 
 ```python
@@ -221,8 +300,15 @@ if composite > best_composite and bear_sortino > 0.3 and total_trades > 0:
     # save nova_brain_best.pt
 ```
 
-This prevents a bear-chaotic checkpoint from being saved as "best" just because it had
-a good bull window. The `bear_sortino > 0.3` guard is a minimum bar — tune as needed.
+> **Kiran:** Conceptually right. Practical concern: in early training (steps 0-40k),
+> BEAR Sortino will be deeply negative — the `bear_sortino > 0.3` guard would block ALL
+> checkpoint saves until the policy is fairly mature. We may want a softer version for
+> the early phase: save if `composite > best_composite` (no hard bear floor), then tighten
+> the gate once bear Sortino is consistently above some lower threshold (e.g. > -1.0).
+> Otherwise we lose the step-20k and step-30k saves that give us early diagnostic data.
+> Also: the `min(bear, bull) * 0.6 + overall * 0.4` formula will heavily reward
+> bear-avoidance but could over-penalise a policy that's legitimately in a bear-sparse
+> window. Worth discussing the weighting before locking it in.
 
 **Change C — Regime metrics to W&B (do this immediately, costs nothing):**
 
@@ -239,6 +325,8 @@ for regime, m in results['regime_metrics'].items():
         })
 ```
 
+> **Kiran:** Yes. Implement this first, before anything else. No discussion needed.
+
 **Change D — Regime-conditional MIN_HOLD_BARS:**
 
 ```python
@@ -252,6 +340,13 @@ if bars_held >= effective_min_hold:
 elif pct > 0:
     realized_bonus = -abs(pct) * 0.5
 ```
+
+> **Kiran:** Agree on the concept. Same note as Change A — use `self._features.momentum_8h`
+> property rather than `extract_single()` which would trigger a full 16/17-dim extraction
+> just for one value. The halved threshold (25 bars) is a reasonable start. Worth noting
+> that MIN_HOLD_BARS = 50 was itself a calibration from earlier versions — if we're halving
+> it in bear regime we should watch avg hold time in the next run to make sure we haven't
+> opened the door to scalping in disguise.
 
 ---
 
@@ -272,14 +367,25 @@ first, protection second.
 Implementation: pass `phase` into `TradingEnv`, adjust `_compute_regime_weights` to
 return phase-appropriate distributions.
 
+> **Kiran:** I like the concept and the phasing logic is intuitive. Two concerns:
+>
+> 1. **Catastrophic forgetting**: RL agents can unlearn bull competence during the bear-heavy
+>    Phase 3. We'd need to monitor bull Sortino closely in Phase 3 and potentially mix in
+>    some bull episodes even then. A replay buffer that retains Phase 1 experiences could
+>    help but adds complexity.
+>
+> 2. **Phase boundary sensitivity**: If the agent isn't competent in bull by step 60k
+>    (which is possible — our current v12.4 is at step 100k with no positive Sortino yet),
+>    Phase 2 introduction of bear episodes would be loading bear onto a broken foundation.
+>    We might need Phase 1 to have a competence gate (e.g. "advance when bull Sortino > 0"
+>    rather than at a fixed step count).
+>
+> Worth a sprint, but I'd put it after Track 2 changes are validated. Track 2 is lower risk
+> and more reversible.
+
 ---
 
 ## Part 4 — Questions for Kiran
-
-*Kiran — please answer these from your live training observations. Your answers will
-determine which of the above changes to prioritise and in what order.*
-
----
 
 **Q1 — Current v12.4 training state:**
 What step is the v12.4 run currently at? What are the most recent validation backtest
@@ -287,7 +393,13 @@ metrics (Sortino, return, drawdown, win rate)? Is there any trend visible yet or
 still in early noise?
 
 *Kiran's response:*
-> [please fill in]
+> Step ~100k as of this annotation. Best Sortino is -3.7082, first recorded at step ~20k,
+> improved from -6.4299 initial. No further improvement since step ~30k — the run has been
+> plateaued for ~70k steps. This is concerning. v12.1 BTC (our best run) hit +0.1076 at
+> step 80k. v12.4 is past that point with no positive Sortino. It may be that training from
+> scratch with a 17-dim network is a harder initialisation problem, or that the new feature
+> hasn't provided useful signal yet at this stage of training. I'm watching it through to
+> completion but not optimistic about the final checkpoint.
 
 ---
 
@@ -297,7 +409,13 @@ episode start), what does the action distribution look like? Is HOLD dominant, o
 still firing frequently? Do you have visibility into per-episode action distributions?
 
 *Kiran's response:*
-> [please fill in]
+> No per-episode action distribution visibility in current logs — only overall action counts
+> at backtest time. The most notable distribution we have is from the v12.1 OOS backtest:
+> ADJ_STOP:51% / REALIZE:48% / BUY:1% / HOLD:0% / CANCEL:0%. That run showed near-zero
+> HOLD and near-zero BUY — the agent had essentially learned the trade management lifecycle
+> (enter once, manage, exit) but had no entry selectivity by regime. We don't yet know
+> whether v12.4 shows different per-regime distributions. This is exactly what the W&B
+> regime logging (Change C) would give us going forward.
 
 ---
 
@@ -306,7 +424,11 @@ What is the current alpha value and entropy trend? Is entropy stable, collapsing
 still high? Has `exploit_start_step` been set for this run, or is piecewise decay disabled?
 
 *Kiran's response:*
-> [please fill in]
+> Piecewise decay is enabled: exploit_start=40k, floor log_alpha=-1.50 (alpha≈0.22),
+> auto-alpha ON with target_entropy=1.577. We don't have per-step alpha values in the
+> log (they go to W&B), but the configuration matches what worked for v12.1 BTC. The
+> floor=-1.5 was confirmed good in v12.1 — floor=-3.0 (alpha≈0.05) caused zero-trade
+> paralysis at the exploit transition.
 
 ---
 
@@ -315,7 +437,11 @@ How long are episodes running on average? Are bear episodes truncating faster th
 episodes (suggesting frequent stop-outs)? This would confirm the chaotic entry hypothesis.
 
 *Kiran's response:*
-> [please fill in]
+> Not directly visible in current logs. In the v12.1 OOS run (72 trades, 180 bars avg hold)
+> the distribution looked healthy. In v12.3 (229 trades, 38 bars avg hold) the proportional
+> hold penalty had clearly cut episodes short. v12.4 reverted to flat penalty so we expect
+> something closer to v12.1. We don't have per-regime episode length breakdowns — again,
+> this is an observability gap that regime logging would help close.
 
 ---
 
@@ -325,7 +451,9 @@ like vs BULL Sortino at the latest checkpoint? If no — this should be the firs
 made, before anything else.
 
 *Kiran's response:*
-> [please fill in]
+> No — regime metrics are NOT being logged to W&B. `run_backtest` is called without
+> `regimes=True`. We are completely blind to per-regime performance during training.
+> This is the first change to make. Full stop.
 
 ---
 
@@ -335,28 +463,61 @@ migration from a 16-dim checkpoint? If fresh scratch, is there a 16-dim best che
 on S3 that's worth migrating vs continuing from scratch?
 
 *Kiran's response:*
-> [please fill in]
+> Fresh scratch — random init. No checkpoint migration was done for v12.4. The best
+> available 16-dim checkpoint is `btcusdt/nova_brain_final.pt` (v12.3 final) and
+> `btcusdt/nova_brain_best.pt` from before the v12.4 push — both at 16-dim. Our best
+> 16-dim Sortino is +0.1076 (v12.1 BTC). The migration shim (Track 1 Step 3) is worth
+> doing — extending the first linear layer weight column near-zero for the new 8h feature
+> is low risk and would give v12.4 a better starting point than random init.
 
 ---
 
 **Q7 — Anything anomalous:**
 Anything in the training logs that looks unexpected, unexplained, or that you'd flag as
 a concern? Critic loss behaviour, alpha spikes, action distribution collapses, anything.
-Your live observation will catch things static analysis cannot.
 
 *Kiran's response:*
-> [please fill in]
+> Main concern: the plateau. Best Sortino has not improved in ~70k steps (from step ~30k
+> to step ~100k). In v12.1 the best checkpoint appeared at step 80k — we're past that now
+> with no positive result. The run is healthy (CPU 99.8%, no crashes, checkpoints saving
+> at every 10k) but the policy is not improving. This could be: (a) the 17-dim network
+> needs more steps to converge from random init than 16-dim did; (b) the new feature is
+> adding noise rather than signal at this stage; (c) the training distribution is still
+> too bear-heavy to learn profitable entry. My current expectation is that v12.4 finishes
+> without beating v12.1. The regime feature hypothesis needs the reward function fixes
+> (Track 2) to be testable properly.
 
 ---
 
 ## Part 5 — Kiran's Additional Assessment
 
-*Kiran — if there are problems, patterns, or opportunities you've observed that are not
-addressed above, please document them here. This section is yours.*
+**On sequencing:**
+The problems are real and the fixes are coherent. But we've regressed three consecutive
+times (v12.2, v12.3, v12.4 all worse than v12.1's +0.1076) by stacking changes.
+My recommendation for sequencing:
 
----
+1. **Immediately (no retraining):** Add W&B regime logging (Change C). Run Track 1
+   diagnostic (masking on v12.1 checkpoint) to quantify bear contribution to OOS loss.
+2. **v12.5 (one clear change):** Regime-conditional opportunity cost (Change A) +
+   flat bear bonus. This directly addresses the strongest structural problem.
+   Keep everything else identical to v12.1 to isolate the reward change.
+3. **v12.6:** If v12.5 shows improvement, add regime-conditional MIN_HOLD_BARS (Change D)
+   and composite checkpoint selection (Change B).
+4. **v12.7+:** SMA200 distance feature, curriculum training — only after we have a stable
+   positive Sortino baseline to build on.
 
-*[Kiran's additions]*
+**On the checkpoint situation:**
+The 16-dim best (v12.1, +0.1076) should be preserved explicitly. I'd recommend tagging
+it in S3 as `btcusdt/nova_brain_v12.1_best_sortino0.1076.pt` before it gets overwritten
+by further training. It's our only positive-Sortino checkpoint and the baseline everything
+else should be measured against.
+
+**On asset fundamentals:**
+A standing note Eric has raised multiple times — asset-specific characteristics (SOL
+volatility, ADA liquidity profile, ETH longer learning curve) may explain part of the
+cross-asset performance divergence independently of the regime problem. We haven't been
+able to properly discount or confirm this yet. BTC is the right symbol to validate the
+regime fix on first, then cross-apply carefully.
 
 ---
 
