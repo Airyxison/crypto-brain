@@ -680,4 +680,30 @@ Once all boxes are checked, Barney implements in the order listed.
 
 ---
 
+### Kiran's sign-off notes (2026-04-21)
+
+**0a–0c and Phase 2–3:** Agreed as written.
+
+**0c clarification — 16-dim masking strategy:**
+Neither branch revert nor momentum_30d proxy is needed. Compute `momentum_8h` directly
+from `self._features.prices` in the test script:
+```python
+momentum_8h = (prices[-1] - prices[-480]) / (prices[-480] + 1e-9)
+bear_regime  = momentum_8h < -0.02
+```
+`prices` is the raw deque on `FeatureEngineer` — accessible without touching the model
+or obs vector at all. Clean, no branch gymnastics.
+
+**Phase 1 — one addition to the ask:**
+The brief is sufficient to run Phase 0 today. For Phase 1 (migration shim + Change A),
+Kiran requests Barney produce a **focused implementation PRD** before any code is written.
+Scope: exactly what files change, what the shim does at the weight level, success criteria
+for the fine-tune stabilisation period, and what W&B signals confirm the migration landed
+cleanly. Reason: the migration shim is novel code with no prior reference in this project.
+A cold session re-read of this brief alone is not enough to implement it without drift risk.
+
+One PRD, Phase 1 only. Not the full roadmap.
+
+---
+
 *Document will be updated iteratively. Commit history is the audit trail.*
