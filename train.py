@@ -123,6 +123,8 @@ def parse_args():
     p.add_argument('--buffer-size',   type=int,   default=None,  help='Replay buffer capacity. Defaults to 200k (serial) or 200k×num_envs (vectorized).')
     p.add_argument('--exploit-start', type=int,   default=None,  help='Step to freeze auto-alpha and begin linear decay to floor (v12 piecewise entropy). Default: disabled.')
     p.add_argument('--exploit-floor', type=float, default=-3.0,  help='log_alpha floor during exploit phase (default -3.0 → alpha≈0.05).')
+    p.add_argument('--epsilon',        type=float, default=None,  help='Opp-cost epsilon override. Defaults to per-symbol value from EPSILON_BY_SYMBOL.')
+    p.add_argument('--opp-cost-thresh', type=float, default=None, help='Min |momentum_8h| to trigger opp_cost (v12.6 RANGE filter). Default: 0.005.')
     return p.parse_args()
 
 
@@ -181,11 +183,18 @@ def main():
     wb = wandb_init(args, agent)
 
     # Training environment setup — serial (default) or vectorized (--num-envs N)
+    # v12.6: build env_config with per-symbol epsilon and opp_cost_thresh
+    env_config = {'max_episode_steps': args.episode_steps, 'symbol': args.symbol}
+    if args.epsilon is not None:
+        env_config['epsilon'] = args.epsilon
+    if args.opp_cost_thresh is not None:
+        env_config['opp_cost_thresh'] = args.opp_cost_thresh
+
     if args.num_envs > 1:
         from gymnasium.vector import AsyncVectorEnv
-        ep_steps = args.episode_steps
+        cfg = dict(env_config)
         vec_env = AsyncVectorEnv([
-            (lambda: TradingEnv(train_ticks, {'max_episode_steps': ep_steps}))
+            (lambda: TradingEnv(train_ticks, cfg))
             for _ in range(args.num_envs)
         ])
         obs_batch, _ = vec_env.reset()
@@ -194,7 +203,7 @@ def main():
                              # keeping the experience/gradient ratio balanced (Nova v11 spec)
         print(f"[TRAIN] Vectorized mode: {args.num_envs} envs  |  {grad_updates} grad updates/step")
     else:
-        env = TradingEnv(train_ticks, {'max_episode_steps': args.episode_steps})
+        env = TradingEnv(train_ticks, env_config)
         obs, _ = env.reset()
         episode_reward = 0.0
         grad_updates   = 4   # 4 updates/step in serial mode (unchanged from v10)

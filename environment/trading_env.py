@@ -34,8 +34,22 @@ CANCEL_ORDER  = 4
 ALPHA         = 0.5    # drawdown penalty weight
 BETA          = 0.0    # stop-loss hit penalty (removed: base return already captures the loss)
 GAMMA         = 0.00003 # losing hold cost per bar (v12.3: between v10 0.00001 and v12.2 0.0001 — v12.2 was too aggressive)
-EPSILON       = 0.00001 # opportunity cost: penalty for holding cash while market moves (v10: reduced 10x — same magnitude fix)
+EPSILON       = 0.00001 # opportunity cost default (v12.6: overridden per-symbol via config)
 MIN_HOLD_BARS = 50     # minimum bars before an agent-chosen exit earns a realized bonus
+
+# Per-symbol EPSILON: normalized so opp_cost has equal magnitude across assets.
+# Derived from regime_analysis.py — BTC avg actionable move = 0.00041 (baseline 1.0x).
+EPSILON_BY_SYMBOL = {
+    'BTCUSDT': 0.00001000,
+    'ETHUSDT': 0.00000683,  # 0.00041 / 0.00060 * 0.00001
+    'SOLUSDT': 0.00000519,  # 0.00041 / 0.00079 * 0.00001
+    'ADAUSDT': 0.00000471,  # 0.00041 / 0.00087 * 0.00001
+}
+
+# v12.6: minimum |momentum_8h| to classify as BULL/BEAR for opp_cost.
+# At 0.0 (v12.5) regime is effectively always on (~97% BULL/BEAR).
+# At 0.005 (0.5%) filters noisy near-zero momentum — creates meaningful RANGE state.
+OPP_COST_THRESH = 0.005
 
 # Regime-aware sampling (v12.3): lighter weights than v12.2.
 # v12.2 at 3x BEAR / 0.5x BULL overcorrected — flooded training with crashes,
@@ -63,6 +77,11 @@ class TradingEnv(gym.Env):
         self.max_hold_bars     = self.config.get('max_hold_bars', 300)
         self.max_episode_steps = self.config.get('max_episode_steps', 500)  # longer episodes let the agent see trades through
         self._step_count       = 0
+
+        # v12.6: per-symbol epsilon and opp_cost threshold (config overrides module defaults)
+        symbol = self.config.get('symbol', 'BTCUSDT').upper()
+        self._epsilon         = self.config.get('epsilon', EPSILON_BY_SYMBOL.get(symbol, EPSILON))
+        self._opp_cost_thresh = self.config.get('opp_cost_thresh', OPP_COST_THRESH)
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(17,), dtype=np.float32
@@ -226,10 +245,10 @@ class TradingEnv(gym.Env):
             if pnl_pct < -0.01:
                 hold_cost = -GAMMA
 
-        # Opportunity cost: regime-conditional (v12.5 Change A).
-        # Bull regime (momentum_8h > 0, price rising): penalize cash-holding.
-        # Bear regime (momentum_8h < 0, price falling): bonus for correct inaction.
-        # RANGE / mismatched regimes: no opp_cost (avoid conflicting gradients).
+        # Opportunity cost: regime-conditional (v12.5 Change A, v12.6 calibrated).
+        # v12.6: uses per-symbol epsilon (volatility-normalized) and opp_cost_thresh
+        # (minimum |momentum_8h| to qualify as BULL/BEAR — filters near-zero noise).
+        # At thresh=0.005: ~30-40% of bars become RANGE, preventing constant firing.
         opp_cost = 0.0
         if not self._ob.position and not self._ob.pending_order and self._idx >= 2:
             prev_price = self.ticks[self._idx - 2]['price']
@@ -242,10 +261,10 @@ class TradingEnv(gym.Env):
                 momentum_8h = (prices_dq[-1] - prices_dq[-480]) / (prices_dq[-480] + 1e-9)
             else:
                 momentum_8h = 0.0
-            if price_move > 0 and momentum_8h > 0:
-                opp_cost = -EPSILON * price_move       # bull: penalty for missing upside
-            elif price_move < 0 and momentum_8h < 0:
-                opp_cost = +EPSILON * abs(price_move)  # bear: bonus for correct cash-holding
+            if price_move > 0 and momentum_8h > self._opp_cost_thresh:
+                opp_cost = -self._epsilon * price_move       # bull: penalty for missing upside
+            elif price_move < 0 and momentum_8h < -self._opp_cost_thresh:
+                opp_cost = +self._epsilon * abs(price_move)  # bear: bonus for correct cash-holding
 
         # Realized gain/loss bonus — explicit credit assignment when a trade closes.
         # Stop-triggered exits: just the raw PnL (agent didn't choose the timing).
