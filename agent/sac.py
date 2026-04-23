@@ -154,6 +154,10 @@ class SAC:
             # Soft Bellman: V(s') = Σ_a π(a|s') [Q(s',a) - α log π(a|s')]
             v_next = (next_probs * (min_q_next - self.alpha * next_log_probs)).sum(dim=1)
             q_target = r + (1.0 - d) * self.gamma * v_next.detach()
+            # Clamp prevents Q-divergence feedback loop: without this, large negative
+            # rewards drive Q-targets deep negative → critic overfits → alpha spikes to
+            # clamp ceiling → policy collapses to HOLD. Seen in v12.7-A (alpha=7.389 by step 1k).
+            q_target = torch.clamp(q_target, -10.0, 10.0)
 
         q1 = self.critic1(s).gather(1, a.unsqueeze(1)).squeeze(1)
         q2 = self.critic2(s).gather(1, a.unsqueeze(1)).squeeze(1)

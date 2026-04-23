@@ -125,6 +125,7 @@ def parse_args():
     p.add_argument('--exploit-floor', type=float, default=-3.0,  help='log_alpha floor during exploit phase (default -3.0 → alpha≈0.05).')
     p.add_argument('--epsilon',        type=float, default=None,  help='Opp-cost epsilon override. Defaults to per-symbol value from EPSILON_BY_SYMBOL.')
     p.add_argument('--opp-cost-thresh', type=float, default=None, help='Min |momentum_8h| to trigger opp_cost (v12.6 RANGE filter). Default: 0.005.')
+    p.add_argument('--batch-size',     type=int,   default=None,  help='SAC mini-batch size (default 1024). Option B uses 256 to reduce replay buffer overfitting.')
     return p.parse_args()
 
 
@@ -157,6 +158,8 @@ def main():
         sac_cfg['alpha'] = args.alpha
     if args.no_auto_alpha:
         sac_cfg['auto_alpha'] = False
+    if args.batch_size is not None:
+        sac_cfg['batch_size'] = args.batch_size
     # Scale buffer with num_envs to preserve experience diversity window.
     # Default: 200k serial, or 200k × num_envs vectorized (e.g. 3.2M for 16 envs).
     buf_size = args.buffer_size or (200_000 * max(args.num_envs, 1))

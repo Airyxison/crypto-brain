@@ -95,30 +95,61 @@ Updated after every completed run. Source of truth for "have we tried this befor
 - `auto_alpha=True` runs unsupervised for all 200k steps (no entropy decay floor)
 - Everything else unchanged (same checkpoint as v12.5/v12.6 BTC runs)
 
-**What we are testing:** Whether the piecewise entropy schedule is the primary cause of post-40k degradation. Independent architecture review identified the exploit phase as the likely culprit — the agent switches to exploit before the critic has reliable Q-estimates, causing mode collapse. Best results in every prior run appeared just *before* exploit kicked in.
+**What we tested:** Whether the piecewise entropy schedule is the primary cause of post-40k degradation.
 
-**Hypothesis:** Removing the entropy brake will allow the policy to keep exploring past step 40k and either (a) find a better peak later, or (b) maintain a stable policy rather than degrading.
+**Results:**
+| Step | Sortino |
+|------|---------|
+| 10k  | **-0.4563** ← best (still an early-peak) |
+| 20k  | -2.6909 |
+| 30k  | -3.3495 |
+| 40k  | -2.7076 |
+| 50k  | -3.0299 |
+| 60k  | -1.6458 |
+| 70k  | -2.4904 |
+| 80k  | -1.3935 |
+| 90k  | -1.6329 |
+| 100k | -2.0987 |
+| 110k | -3.0292 |
+| 120k | -3.3752 |
 
-**Success criteria:** Best Sortino found after step 40k AND/OR best Sortino > -0.0382  
-**Failure criteria:** Same early-peak pattern, best still at <40k steps  
+**Smoking gun:** `alpha` locked at `7.3891` (= `e^2.0`, the clamp ceiling) from step 1000 onward. Q-values diverged before the first eval — not at step 40k as hypothesized. The policy collapsed to 92% HOLD immediately.
 
-**Results:** TBD (run in progress as of 2026-04-22 22:19)  
+**Conclusion:** OPTION A FAILED. Exploit schedule was NOT the primary cause. The early-peak pattern persisted — best at step 10k, same as all prior runs. Root cause is Q-value divergence from the first training step. Reward magnitude (GAMMA=3e-5, EPSILON=1e-5) produces near-zero targets with high variance; without Q-target clamping, the Bellman backup amplifies noise, critics diverge, alpha spikes to clamp ceiling, policy collapses. Proceed to Option B.
+
 **W&B BTC:** https://wandb.ai/enlnetsol/nova-brain/runs/n64g64yc
 
 ---
 
-## v12.7-B — Full Training Stability Overhaul (Queued, pending v12.7-A outcome)
-**What changed (planned):**
-- Episode length: 500 → 2000 ticks (agent sees full trade lifecycle)
-- Q-target clamping: `torch.clamp(q_target, -10, 10)` in critic loss
-- Batch size: 1024 → 256 (reduce overfitting on warm replay buffer)
-- Exploit schedule: removed (same as v12.7-A)
-- Training budget: 200k → 300k steps
+## v12.7-B — Full Training Stability Overhaul (Code-ready, pending Eric approval)
+**What changed:**
+- Q-target clamping: `torch.clamp(q_target, -10, 10)` in critic loss ← **implemented in agent/sac.py**
+- Episode length: 1000 → 2000 ticks (agent sees full trade lifecycle) ← `--episode-steps 2000`
+- Batch size: 1024 → 256 (reduce overfitting on warm replay buffer) ← `--batch-size 256` (**new CLI arg, implemented in train.py**)
+- Exploit schedule: removed (same as v12.7-A) ← no `--exploit-start` flag
+- Training budget: 200k → 300k steps ← `--steps 300000`
 
-**What we are testing:** Whether sparse reward signal + short episodes are preventing stable critic training. Episode length of 500 ticks means most exits are auto-triggered (max_hold_bars), not agent-chosen. The realized_bonus term credits stop-losses, not learned behavior.
+**Train command (ready to run):**
+```
+python train.py \
+  --db /root/ticks.db \
+  --symbol BTCUSDT \
+  --resume checkpoints/btcusdt/nova_brain_v12.1_migrated_17dim.pt \
+  --steps 300000 \
+  --episode-steps 2000 \
+  --batch-size 256 \
+  --num-envs 16 \
+  --opp-cost-thresh 0.0 \
+  --save-every 10000 \
+  2>&1 | tee /root/logs/v12.7b_btcusdt.log
+```
 
-**Execute if:** v12.7-A shows same early-peak pattern (i.e., exploit schedule is not the primary cause)  
-**Skip if:** v12.7-A succeeds (exploit schedule was the issue)
+**What we are testing:** Whether Q-value divergence (confirmed in v12.7-A: alpha=7.389 from step 1k) is the root cause of the early-peak pattern. Q-clamp prevents the Bellman backup from amplifying reward noise. Longer episodes give the agent a chance to see full trade lifecycles so realized_bonus becomes meaningful signal rather than crediting stop-losses.
+
+**Execute if:** v12.7-A shows same early-peak pattern — CONFIRMED, proceed.  
+**Status:** Awaiting Eric approval.
+
+**Results:** TBD
 
 ---
 
