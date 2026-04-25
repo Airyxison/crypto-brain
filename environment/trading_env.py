@@ -82,6 +82,7 @@ class TradingEnv(gym.Env):
         symbol = self.config.get('symbol', 'BTCUSDT').upper()
         self._epsilon         = self.config.get('epsilon', EPSILON_BY_SYMBOL.get(symbol, EPSILON))
         self._opp_cost_thresh = self.config.get('opp_cost_thresh', OPP_COST_THRESH)
+        self._entry_momentum_8h = None  # momentum_8h captured at BUY_LIMIT — conviction tracking
 
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(17,), dtype=np.float32
@@ -132,6 +133,7 @@ class TradingEnv(gym.Env):
         self._step_count = 0
         self._ob         = OrderBookSimulator(self.initial_cash)
         self._features   = FeatureEngineer()
+        self._entry_momentum_8h = None
 
         # Pre-warm feature engineer with history before start
         for i in range(max(0, start - MIN_WINDOW), start):
@@ -167,6 +169,8 @@ class TradingEnv(gym.Env):
         # Realized PnL delta this step — positive only when a trade just closed
         step_realized  = self._ob.realized_pnl - prev_realized_pnl
         exit_was_stop  = self._ob.last_close_reason == 'stop_loss'
+        if exit_was_stop:
+            self._entry_momentum_8h = None  # stop fired — thesis broken, reset conviction
 
         # Reward unscaled — 1000x multiplier was causing Q-values in the thousands,
         # which drove auto-alpha into the tens-of-thousands and drowned the Q signal.
@@ -216,10 +220,17 @@ class TradingEnv(gym.Env):
         if action == BUY_LIMIT:
             vol = self._features.current_volatility if self._features.ready else 0.0
             self._ob.place_buy_limit(price, volatility=vol)
+            # Capture momentum_8h at entry for conviction-hold logic in _compute_reward
+            prices_dq = self._features.prices
+            if len(prices_dq) >= 480:
+                self._entry_momentum_8h = (prices_dq[-1] - prices_dq[-480]) / (prices_dq[-480] + 1e-9)
+            else:
+                self._entry_momentum_8h = None
         elif action == ADJUST_STOP:
             self._ob.adjust_stop(price)
         elif action == REALIZE_GAIN:
             self._ob.realize_gain(price)
+            self._entry_momentum_8h = None  # position closed
         elif action == CANCEL_ORDER:
             self._ob.cancel_order()
         # HOLD: no-op
@@ -238,12 +249,19 @@ class TradingEnv(gym.Env):
         stop_penalty = -BETA if event.get('stop_hit') else 0.0
 
         # Cost for holding a losing position — flat penalty per bar when underwater.
-        # Proportional scaling (v12.2/12.3) over-penalized and cut hold times too short.
+        # v12.8 conviction-hold: if entry was on negative momentum_8h (dip-buy thesis)
+        # AND price is still above stop, suppress hold_cost entirely — the stop-loss is
+        # the only exit signal that matters. Penalizing patience here caused panic exits
+        # on valid entries (confirmed by consistency test: 49/55 BTC entries on neg mom_8h).
         hold_cost = 0.0
         if self._ob.position:
             pnl_pct = self._ob.position.unrealized_pnl_pct(self.ticks[self._idx - 1]['price'])
             if pnl_pct < -0.01:
-                hold_cost = -GAMMA
+                conviction_entry = (
+                    self._entry_momentum_8h is not None
+                    and self._entry_momentum_8h < -self._opp_cost_thresh
+                )
+                hold_cost = 0.0 if conviction_entry else -GAMMA
 
         # Opportunity cost: regime-conditional (v12.5 Change A, v12.6 calibrated).
         # v12.6: uses per-symbol epsilon (volatility-normalized) and opp_cost_thresh
