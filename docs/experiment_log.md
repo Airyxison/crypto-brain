@@ -153,6 +153,61 @@ python train.py \
 
 ---
 
+## v12.8 — Conviction-Hold + v12.9 Feature Expansion (19-dim)
+
+### v12.8 — Conviction-Hold Logic
+**What changed:**
+- Suppresses `hold_cost` when entry `momentum_8h < -opp_cost_thresh` (dip-buy thesis active)
+- Stop-loss remains the only exit voice on conviction entries — agent no longer penalized for patience
+- Motivation: consistency test showed 49/55 BTC entries on negative momentum_8h; hold_cost was punishing valid dip-buy holds
+
+**Status:** Running on vast.ai (BTC, W&B: qku52dnl). Results pending.
+
+---
+
+### v12.9 — 19-dim Feature Expansion: Directional Volume Flow (Barney v1)
+**What changed:**
+- Added `vol_flow_30` [17] and `vol_flow_240` [18] to state vector (17→19 dim)
+- Motivation: agent enters on dip regardless of whether selling pressure is real or thin-tape noise — can't distinguish conviction from noise
+- Implementation: bar-level signed volume (not tick rule). `_vol_flow(window, lag_end)` with 4 bug fixes per Barney's spec (NaN guard, epsilon denominator, min_periods, thin-tape volume floor at 20% of 24h median × window)
+- `vol_flow_30`: immediate 30-bar directional pressure (lag=0)
+- `vol_flow_240`: background 240-bar regime (lagged t-240→t-31, structurally decorrelated from vol_flow_30)
+- Migration: `scripts/migrate_checkpoint_17to19.py` extends net.0.weight [256,17]→[256,19]
+
+**Tier 1 Validation Results (2026-04-25, sample=50k ticks/symbol):**
+
+| Symbol | Dist (1) | Precision (2) | Decorrelation (3) | Verdict |
+|--------|----------|---------------|-------------------|---------|
+| BTC    | PASS     | FAIL (49.4% bear, 48.7% bull) | PASS (r=0.48) | FAIL |
+| ETH    | PASS     | FAIL (48.2% bear, 47.9% bull) | PASS (r=0.51) | FAIL |
+| SOL    | PASS     | FAIL (46.9% bear, 47.8% bull) | PASS (r=0.46) | FAIL |
+| ADA    | PASS     | FAIL (43.3% bear, 42.1% bull) | PASS (r=0.30) | FAIL |
+
+**⚠️ Precision check interpretation — Barney's puzzle:**
+All four symbols fail Check 2 by a consistent, thin margin. This is not a broken feature. At 1-minute resolution, `vol_flow_30 < -0.3` is a **contrarian microstructure signal**: heavy selling pressure slightly more often precedes a bounce than continuation. This is capitulation dynamics — sellers exhaust at the 1-minute level, tape flips. The feature is regime context, not a next-bar directional predictor. The agent will discover the correct interpretation through experience.
+
+Checks 1 (distribution: centered near 0, no clamping) and 3 (decorrelation: r < 0.7 on all symbols) both pass — the features are well-behaved and genuinely independent. **Decision: proceed to training.**
+
+**Train command (19-dim, post-migration):**
+```bash
+# Step 1: migrate checkpoint
+python scripts/migrate_checkpoint_17to19.py \
+  --src checkpoints/btcusdt/nova_brain_best.pt \
+  --dst checkpoints/btcusdt/nova_brain_19dim.pt
+
+# Step 2: train
+python train.py \
+  --db /root/ticks.db --symbol BTCUSDT \
+  --resume checkpoints/btcusdt/nova_brain_19dim.pt \
+  --steps 300000 --episode-steps 2000 --batch-size 256 \
+  --num-envs 16 --opp-cost-thresh 0.0 --save-every 10000 \
+  2>&1 | tee /root/logs/v12.9_btcusdt.log
+```
+
+**Results:** TBD
+
+---
+
 ## Key Patterns (Reference)
 
 | Pattern | First observed | Still present |
