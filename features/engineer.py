@@ -1,7 +1,7 @@
 """
 Feature Engineering
 -------------------
-Converts raw tick data into a normalized 17-dimensional state vector.
+Converts raw tick data into a normalized 19-dimensional state vector.
 Operates on a rolling window — no lookahead, no leakage.
 
 Features:
@@ -22,6 +22,9 @@ Features:
   [14] momentum_7d         — 7-day return (weekly regime)
   [15] momentum_30d        — 30-day return (macro bull/bear regime)
   [16] momentum_8h         — 8-hour return (explicit regime signal, matches REGIME_WINDOW=480)
+  [17] vol_flow_30         — 30-bar directional volume flow [-1, +1] (Barney v1, 2026-04-25)
+  [18] vol_flow_240        — 240-bar directional volume flow, lagged t-240 to t-31 [-1, +1]
+                             (background regime — structurally decorrelated from vol_flow_30)
 """
 
 import numpy as np
@@ -40,24 +43,78 @@ WINDOW_30D  = 43_200   # 30 days — macro regime window
 WINDOW_8H   = 480      # 8-hour window — matches REGIME_WINDOW in trading_env.py
 MIN_WINDOW  = WINDOW_5M   # 5 min of history to start — regime features degrade gracefully
 
+# Volume flow windows (Barney v1, 2026-04-25)
+VOL_FLOW_SHORT  = 30   # 30-bar immediate pressure window
+VOL_FLOW_LONG   = 240  # 240-bar background regime (lagged: t-240 to t-31, decorrelated from short)
+VOL_FLOOR_WINDOW = 1_440  # 24h median for thin-tape floor computation
+
 
 class FeatureEngineer:
     def __init__(self):
         self.prices     = deque(maxlen=WINDOW_30D)  # 30 days — supports macro regime features
         self.volumes    = deque(maxlen=WINDOW_30D)
         self.times      = deque(maxlen=WINDOW_30D)
+        self._signed_vols = deque(maxlen=WINDOW_30D)  # bar_sign * quantity per bar
         self._ready     = False
 
     def update(self, price: float, volume: float, trade_time: int):
+        # bar_sign: direction of this bar vs previous (Bug 1 fix: fillna(0) on first bar)
+        if self.prices:
+            bar_sign = float(np.sign(price - self.prices[-1]))
+        else:
+            bar_sign = 0.0
         self.prices.append(price)
         self.volumes.append(volume)
         self.times.append(trade_time)
+        self._signed_vols.append(bar_sign * abs(volume))
         if len(self.prices) >= MIN_WINDOW:
             self._ready = True
 
     @property
     def ready(self) -> bool:
         return self._ready
+
+    def _vol_flow(self, window: int, lag_end: int = 0) -> float:
+        """
+        Directional volume flow over `window` bars ending `lag_end` bars ago.
+        Returns value in [-1, +1]. Returns 0.0 if insufficient history.
+
+        Barney v1 implementation — four bugs fixed:
+          1. bar_sign fillna(0) handled in update()
+          2. epsilon guard on denominator (Bug 2)
+          3. min_periods enforced via explicit length check (Bug 4)
+          4. thin-tape volume floor — 20% of 24h median * window (design conflict fix)
+        Bug 3 (cross-symbol leakage) is not applicable here — FeatureEngineer
+        is always single-symbol (one instance per env).
+        """
+        n = len(self._signed_vols)
+        required = window + lag_end
+        if n < required:
+            return 0.0
+
+        sv   = np.array(self._signed_vols, dtype=np.float64)
+        vols = np.array(self.volumes,      dtype=np.float64)
+
+        # Slice: lag_end=0 → last `window` bars; lag_end=31 → t-240 to t-31
+        if lag_end > 0:
+            sv_window   = sv[-(required): -(lag_end)]
+            vol_window  = vols[-(required): -(lag_end)]
+        else:
+            sv_window   = sv[-window:]
+            vol_window  = vols[-window:]
+
+        flow_sum = float(sv_window.sum())
+        vol_sum  = float(vol_window.sum())
+
+        # Thin-tape volume floor: 20% of 24h median × window (Bug: design conflict fix)
+        if n >= VOL_FLOOR_WINDOW:
+            median_vol = float(np.median(vols[-VOL_FLOOR_WINDOW:]))
+        else:
+            median_vol = float(np.median(vols))
+        vol_floor = median_vol * 0.2 * window
+        vol_sum   = max(vol_sum, vol_floor) + 1e-8  # Bug 2: epsilon guard
+
+        return float(np.clip(flow_sum / vol_sum, -1.0, 1.0))
 
     @property
     def momentum_8h(self) -> float:
@@ -161,6 +218,10 @@ class FeatureEngineer:
         momentum_30d = _momentum(WINDOW_30D)
         momentum_8h  = _momentum(WINDOW_8H)
 
+        # Volume flow features (Barney v1, 2026-04-25)
+        vol_flow_30  = self._vol_flow(VOL_FLOW_SHORT, lag_end=0)   # immediate pressure
+        vol_flow_240 = self._vol_flow(VOL_FLOW_LONG,  lag_end=31)  # background regime (lagged)
+
         # Assemble state vector
         state = np.array([
             float(np.clip(price_vs_range, 0.0, 1.0)),          # [0]
@@ -175,11 +236,13 @@ class FeatureEngineer:
             float(time_in_pos),                                # [9]
             float(dist_to_stop),                               # [10]
             float(np.clip(trade_frequency, -3.0, 3.0)),        # [11]
-            float(np.clip(_momentum(1800), -0.25, 0.25)),       # [12] 30-min momentum
+            float(np.clip(_momentum(1800), -0.25, 0.25)),      # [12] 30-min momentum
             float(np.clip(momentum_1d,  -0.2, 0.2)),           # [13] 24h trend
             float(np.clip(momentum_7d,  -0.5, 0.5)),           # [14] weekly regime
             float(np.clip(momentum_30d, -1.0, 1.0)),           # [15] macro bull/bear
             float(np.clip(momentum_8h,  -0.5, 0.5)),           # [16] 8h regime signal
+            float(vol_flow_30),                                # [17] 30-bar vol flow
+            float(vol_flow_240),                               # [18] 240-bar vol flow (lagged)
         ], dtype=np.float32)
 
         return state
