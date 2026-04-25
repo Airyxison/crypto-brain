@@ -107,6 +107,8 @@ def main():
     p.add_argument('--window',     type=int, default=10000,
                    help='Ticks per evaluation window (~7 days at 1-min)')
     p.add_argument('--seed',       type=int, default=42)
+    p.add_argument('--state-dim',  type=int, default=None,
+                   help='Override STATE_DIM for loading older checkpoints (e.g. 17 for v12.8)')
     args = p.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -116,7 +118,8 @@ def main():
     print(f"\n[Consistency] {args.symbol} | {len(test_ticks):,} test ticks")
     print(f"[Consistency] {args.runs} runs × {args.window:,} tick windows")
 
-    agent = SAC()
+    sac_cfg = {'state_dim': args.state_dim} if args.state_dim else {}
+    agent = SAC(sac_cfg)
     agent.load(args.checkpoint)
     print(f"[Consistency] Checkpoint: step {agent.steps:,}  best_sortino {agent.best_sortino:.4f}\n")
 

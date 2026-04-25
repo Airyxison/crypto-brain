@@ -61,12 +61,13 @@ class SAC:
             self.log_alpha   = None
             self.alpha_opt   = None
 
-        # Networks
-        self.actor    = Actor().to(self.device)
-        self.critic1  = Critic().to(self.device)
-        self.critic2  = Critic().to(self.device)
-        self.target1  = Critic().to(self.device)
-        self.target2  = Critic().to(self.device)
+        # Networks — state_dim can be overridden for loading older checkpoints
+        sdim = cfg.get('state_dim', STATE_DIM)
+        self.actor    = Actor(state_dim=sdim).to(self.device)
+        self.critic1  = Critic(state_dim=sdim).to(self.device)
+        self.critic2  = Critic(state_dim=sdim).to(self.device)
+        self.target1  = Critic(state_dim=sdim).to(self.device)
+        self.target2  = Critic(state_dim=sdim).to(self.device)
 
         # Initialize targets as hard copies
         self.target1.load_state_dict(self.critic1.state_dict())
@@ -78,7 +79,7 @@ class SAC:
         self.critic2_opt = torch.optim.Adam(self.critic2.parameters(), lr=self.lr)
 
         # Replay buffer
-        self.buffer = ReplayBuffer(capacity=self.buffer_size, state_dim=STATE_DIM)
+        self.buffer = ReplayBuffer(capacity=self.buffer_size, state_dim=sdim)
 
         self.steps = 0
         self.best_sortino = -np.inf
