@@ -304,15 +304,20 @@ def main():
                 'episodes':           len(episode_rewards),
             })
 
-        # Column [16] weight norm — tracks how quickly agent learns to use momentum_8h.
+        # Column weight norms — track how quickly agent learns to use new features.
         # Near-zero at step 0 (migration init), should grow > 0.2 by step 30k.
         if step % 10_000 == 0:
             try:
-                col16_norm = float(agent.actor.net[0].weight[:, 16].norm())
-                wandb_log(wb, {'step': step, 'weights/actor_fc1_col16_norm': col16_norm})
-                print(f"[Step {step:>6}] actor col[16] weight norm = {col16_norm:.5f}")
+                w = agent.actor.net[0].weight.detach()
+                log_payload = {'step': step}
+                for col_idx in (16, 17, 18):
+                    if w.shape[1] > col_idx:
+                        norm = float(w[:, col_idx].norm())
+                        log_payload[f'weights/actor_fc1_col{col_idx}_norm'] = norm
+                        print(f"[Step {step:>6}] actor col[{col_idx}] weight norm = {norm:.5f}")
+                wandb_log(wb, log_payload)
             except (AttributeError, IndexError):
-                pass  # checkpoint not migrated or architecture mismatch — skip silently
+                pass  # architecture mismatch — skip silently
 
         # Checkpoint + validation backtest
         if step % args.save_every == 0:
